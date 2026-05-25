@@ -1,0 +1,37 @@
+{
+  "name": "@chexian/cli",
+  "version": "1.0.0",
+  "description": "车险数据只读 CLI — PAT 鉴权，cx query/login/whoami/sql/fields/metrics/presets",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cx": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "vitest --run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "cli-table3": "^0.6.5",
+    "kleur": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "files": ["dist", "README.md"],
+  "keywords": ["chexian", "car-insurance", "cli", "data-query"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alongor666/cx-cli.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
