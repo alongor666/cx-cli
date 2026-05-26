@@ -2,7 +2,23 @@
 
 `cx` 是车险数据分析平台的命令行客户端，通过 PAT（Personal Access Token）鉴权，提供保单查询、KPI 查看、SQL 直通等能力。
 
-## 快速开始
+## Windows 用户（推荐）
+
+**无需安装任何环境，直接下载使用：**
+
+1. 前往 [GitHub Releases](../../releases/latest) 下载 `cx-windows.exe`
+2. 将文件移动到任意目录（建议 `C:\tools\cx\`）
+3. 将该目录添加到系统 PATH（按 `Win + S` 搜索"编辑系统环境变量" → 环境变量 → Path → 新建）
+4. 打开新的命令提示符或 PowerShell，运行：
+
+```cmd
+cx login --token cx_pat_xxx.yyy
+cx whoami
+```
+
+---
+
+## 快速开始（开发者 / 有 Node.js）
 
 ### 安装
 
