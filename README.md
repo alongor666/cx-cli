@@ -6,7 +6,7 @@
 
 **无需安装任何环境，直接下载使用：**
 
-1. 前往 [GitHub Releases](../../releases/latest) 下载 `cx-windows.exe`
+1. 前往 [GitHub Releases](../../releases/latest) 下载 `cx-windows.exe`（JSdelivr 加速：[cx-windows.exe](https://cdn.jsdelivr.net/gh/alongor666/cx-cli@v1.0.0/release/cx-windows.exe)）
 2. 将文件移动到任意目录（建议 `C:\tools\cx\`）
 3. 将该目录添加到系统 PATH（按 `Win + S` 搜索"编辑系统环境变量" → 环境变量 → Path → 新建）
 4. 打开新的命令提示符或 PowerShell，运行：
@@ -15,6 +15,18 @@
 cx login --token cx_pat_xxx.yyy
 cx whoami
 ```
+
+**📘 内部使用手册**：查看 [`manual/index.html`](../../tree/main/manual) 获取完整的 8 页使用指南和自动化截图脚本。
+
+### 国内用户下载加速
+
+如果 GitHub 下载速度慢，可以尝试：
+
+| 方式 | 链接 |
+|------|------|
+| **JSdelivr CDN**（推荐） | https://cdn.jsdelivr.net/gh/alongor666/cx-cli@v1.0.0/release/cx-windows.exe |
+| **GitHub 镜像站** | https://hub.fastgit.xyz/alongor666/cx-cli/releases |
+| **Gitee 导入** | 搜索"cx-cli"（需手动导入） |
 
 ---
 
