@@ -56,7 +56,7 @@ program
   .option('-f, --format <fmt>', '输出格式 table|json|csv', 'table')
   .action((key, options, cmd) => {
     const extras = parseExtraParams(cmd.args.slice(1));
-    queryCommand(key, { format: options.format, params: extras });
+    return queryCommand(key, { format: options.format, params: extras });
   });
 
 program
@@ -65,7 +65,7 @@ program
   .option('--groupable', '只列出可分组字段')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
-    fieldsCommand({ groupable: Boolean(options.groupable), format: options.format });
+    return fieldsCommand({ groupable: Boolean(options.groupable), format: options.format });
   });
 
 program
@@ -74,7 +74,7 @@ program
   .option('--category <cat>', '指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure）')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
-    metricsCommand({ category: options.category, format: options.format });
+    return metricsCommand({ category: options.category, format: options.format });
   });
 
 program
@@ -82,7 +82,7 @@ program
   .description('列出筛选器 schema 与 9 个车型快捷预设。')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
-    presetsCommand({ format: options.format });
+    return presetsCommand({ format: options.format });
   });
 
 program
@@ -90,7 +90,7 @@ program
   .description('DuckDB SELECT/WITH 直通：cx sql "SELECT customer_category, COUNT(*) c FROM PolicyFact GROUP BY 1"')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((query, options) => {
-    sqlCommand(query, { format: options.format });
+    return sqlCommand(query, { format: options.format });
   });
 
 program.parseAsync(process.argv).catch((err) => {

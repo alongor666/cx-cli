@@ -22,11 +22,14 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
       console.error(kleur.red(`✘ Unknown route: ${rawKey}`));
       console.error(kleur.gray('  Run "cx routes" to see available routes.'));
       process.exit(1);
+      return;
     }
 
     const data = await cxGet<unknown>(route.fullPath, { query: opts.params });
     const fmt: OutputFormat = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
-    console.log(renderOutput((data as any)?.data ?? data, fmt));
+    // 仅当响应是 { data: ... } 信封且 data 字段存在时才解包，避免 data:null 时回退渲染整个信封
+    const payload = isEnvelope(data) ? data.data : data;
+    console.log(renderOutput(payload, fmt));
   } catch (err) {
     if (err instanceof CxApiError) {
       console.error(kleur.red(`✘ ${err.message}`));
@@ -35,6 +38,11 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
     console.error(kleur.red(`✘ ${(err as Error).message}`));
     process.exit(1);
   }
+}
+
+/** 判断是否为 { data: ... } 信封；存在 data 键即视为信封（包括 data 为 null 的空结果） */
+function isEnvelope(data: unknown): data is { data: unknown } {
+  return !!data && typeof data === 'object' && !Array.isArray(data) && 'data' in data;
 }
 
 function resolveRoute(input: string, routes: Array<{ key: string; path: string; fullPath: string }>) {

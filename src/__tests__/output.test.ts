@@ -75,4 +75,21 @@ describe('renderOutput', () => {
   it('空 nested rows { data: { rows: [] } }: 返回 (no rows)', () => {
     expect(renderOutput({ data: { rows: [] } }, 'table')).toMatch(/no rows/);
   });
+
+  // 回归: .data.rows 优先级必须高于顶层 .rows（与注释一致）
+  it('同时含 .rows 与 .data.rows 时，优先取 .data.rows', () => {
+    const wrapped = {
+      rows: [{ name: 'stale', score: 0 }],
+      data: { rows: [{ name: 'real', score: 99 }] },
+    };
+    const out = renderOutput(wrapped, 'csv');
+    expect(out).toContain('real');
+    expect(out).not.toContain('stale');
+  });
+
+  // 回归: CSV 字段含 \r 必须被引号包裹，避免错行
+  it('csv: 含 \\r 的字段被引号包裹', () => {
+    const out = renderOutput([{ note: 'line1\r\nline2' }], 'csv');
+    expect(out).toBe('note\n"line1\r\nline2"');
+  });
 });

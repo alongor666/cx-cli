@@ -31,12 +31,12 @@ function extractRows(data: unknown): Record<string, unknown>[] | null {
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   // 优先 .data.rows / .data，其次顶层 .rows
-  if (Array.isArray(d.rows)) return d.rows as Record<string, unknown>[];
   if (d.data && typeof d.data === 'object') {
     const inner = d.data as Record<string, unknown>;
     if (Array.isArray(inner)) return inner as Record<string, unknown>[];
     if (Array.isArray(inner.rows)) return inner.rows as Record<string, unknown>[];
   }
+  if (Array.isArray(d.rows)) return d.rows as Record<string, unknown>[];
   return null;
 }
 
@@ -91,6 +91,6 @@ function formatCell(v: unknown): string {
 }
 
 function csvEscape(v: string): string {
-  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  if (/[",\n\r]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
   return v;
 }

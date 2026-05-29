@@ -23,23 +23,44 @@ interface CatalogResp { success: boolean; data: { version: number; routes: Route
 const CACHE_TTL_MS = 24 * 3600 * 1000;
 const CACHE_FILE = 'catalog.json';
 
+function readCache(cachePath: string): RouteMeta[] | null {
+  try {
+    const raw = fs.readFileSync(cachePath, 'utf-8');
+    const cached = JSON.parse(raw) as { routes?: RouteMeta[] };
+    if (Array.isArray(cached.routes) && cached.routes.length > 0) return cached.routes;
+  } catch {
+    // 缓存损坏或不存在
+  }
+  return null;
+}
+
 export async function fetchCatalog(forceRefresh = false): Promise<RouteMeta[]> {
   const cachePath = getCachePath(CACHE_FILE);
   if (!forceRefresh && fs.existsSync(cachePath)) {
     const stat = fs.statSync(cachePath);
     if (Date.now() - stat.mtimeMs < CACHE_TTL_MS) {
-      try {
-        const raw = fs.readFileSync(cachePath, 'utf-8');
-        const cached = JSON.parse(raw) as { routes: RouteMeta[] };
-        if (Array.isArray(cached.routes) && cached.routes.length > 0) return cached.routes;
-      } catch {
-        // 缓存损坏，继续拉远端
-      }
+      const fresh = readCache(cachePath);
+      if (fresh) return fresh;
     }
   }
-  const resp = await cxGet<CatalogResp>('/api/auth/route-catalog');
-  fs.writeFileSync(cachePath, JSON.stringify({ routes: resp.data.routes }, null, 2), { mode: 0o600 });
-  return resp.data.routes;
+
+  try {
+    const resp = await cxGet<CatalogResp>('/api/auth/route-catalog');
+    const routes = resp.data?.routes;
+    if (!Array.isArray(routes) || routes.length === 0) {
+      throw new CxApiError(0, 'Malformed route-catalog response (no routes)');
+    }
+    fs.writeFileSync(cachePath, JSON.stringify({ routes }, null, 2), { mode: 0o600 });
+    return routes;
+  } catch (err) {
+    // 远端失败时回退到（可能过期的）本地缓存
+    const stale = readCache(cachePath);
+    if (stale) {
+      console.error(kleur.yellow('⚠ 远端不可用，使用本地缓存的路由目录（可能已过期）'));
+      return stale;
+    }
+    throw err;
+  }
 }
 
 export async function routesCommand(opts: { refresh?: boolean; tag?: string }): Promise<void> {

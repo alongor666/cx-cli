@@ -22,21 +22,21 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
     process.exit(1);
   }
 
-  cfg.token = token;
-  // 临时写入再校验，方便 cxGet 直接读
-  saveConfig(cfg);
-
   try {
-    const me = await cxGet<{ success: boolean; data: { username: string; role: string } }>('/api/auth/me');
+    // 先用候选 token 校验，成功后才落盘 —— 避免无效 token 残留在磁盘上
+    const me = await cxGet<{ success: boolean; data?: { username?: string; role?: string } }>(
+      '/api/auth/me',
+      { token, baseUrl: cfg.baseUrl }
+    );
+    cfg.token = token;
     cfg.tokenId = token.slice('cx_pat_'.length, 'cx_pat_'.length + 8);
     saveConfig(cfg);
-    console.error(kleur.green(`✔ Logged in as ${me.data.username} (${me.data.role})`));
+    const username = me.data?.username ?? '(unknown)';
+    const role = me.data?.role ?? '(unknown)';
+    console.error(kleur.green(`✔ Logged in as ${username} (${role})`));
     console.error(kleur.gray(`  Config: ~/.chexian/config.json`));
   } catch (err) {
-    // 校验失败回滚
-    delete cfg.token;
-    delete cfg.tokenId;
-    saveConfig(cfg);
+    // 校验失败：未落盘，无需回滚
     if (err instanceof CxApiError) {
       console.error(kleur.red(`✘ Login failed: ${err.message}`));
     } else {
