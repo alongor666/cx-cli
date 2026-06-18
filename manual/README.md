@@ -14,9 +14,9 @@
 **适合人群**：Windows 用户，希望快速完成截图
 
 **操作步骤**：
-1. 编辑 `capture-screenshots-v2.ps1`，配置你的 PAT token（第 18 行）
+1. 终端先运行 `cx login`（交互式 masked PAT 输入；脚本不要求改 `$PAT_TOKEN` — 安全约定 PR #669）
 2. 双击 `开始截图.bat`（或右键 `capture-screenshots-v2.ps1` → 使用 PowerShell 运行）
-3. 按脚本提示按回车键，自动执行 10 个命令并截图
+3. 按脚本提示按回车键；登录页用占位 PAT 演示（不会清你的真登录态），其余命令真跑并截图
 4. 完成后在浏览器打开 `index.html` 验证效果
 
 **预计时间**：5-10 分钟

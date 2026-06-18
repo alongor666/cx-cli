@@ -1,17 +1,22 @@
 # cx-cli 自动化截图脚本
 #
+# ⚠️ 安全约定（PR #669 codex review 沉淀，与 v2 一致）：
+#   1. 截图前请**先手动运行 `cx login`** 完成登录（PAT masked 输入）
+#   2. 本脚本只截图**已登录后**命令；不再截 cx login --token 真 PAT
+#   3. ./images/ 已在 cli/.gitignore；用 v2 (capture-screenshots-v2.ps1) 为首选
+#
 # 使用方法：
-# 1. 右键点击此文件 → 使用 PowerShell 运行
-# 2. 或在 PowerShell 中运行：.\capture-screenshots.ps1
+# 1. 终端先运行 `cx login` 完成登录
+# 2. 右键点击此文件 → 使用 PowerShell 运行
 #
 # 前置条件：
 # - 已安装 cx-windows.exe 并添加到 PATH
-# - 已准备好有效的 PAT token
+# - 已通过 cx login 进入登录态（cx whoami 不报 401）
 
 # ==================== 配置区 ====================
 
-# 配置你的 PAT token（必填）
-$PAT_TOKEN = "cx_pat_xxx.yyy"  # ⚠️ 替换为你的真实 token
+# 演示用占位 PAT（仅 cx login 截图示意，不可换成真实 token）
+$DISPLAY_PAT_PLACEHOLDER = "cx_pat_PLACEHOLDER.example_replace_locally_DO_NOT_COMMIT"
 
 # 查询参数配置
 $QUERY_YEAR = "2026"  # 根据实际数据修改
@@ -55,22 +60,30 @@ try {
     exit 1
 }
 
+# 检查是否已 cx login（截图前置条件，避免脚本中真跑 cx login 写盘清登录态）
+$loginCheck = & cx whoami 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`n✗ 你尚未 cx login" -ForegroundColor Red
+    Write-Host "  请先在终端运行：cx login（交互式 masked PAT 输入）" -ForegroundColor Yellow
+    Write-Host "  确认 cx whoami 不报 401 后再跑本截图脚本" -ForegroundColor Yellow
+    Read-Host "按回车键退出"
+    exit 1
+}
+
 Write-Host ""
 
 # ==================== 截图函数 ====================
 
 function Take-Screenshot {
     param(
-        [string]$FilePath,
-        [int]$Width = $WINDOW_WIDTH,
-        [int]$Height = $WINDOW_HEIGHT
+        [string]$FilePath
     )
 
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    # 创建截图
-    $bounds = [System.Drawing.Rectangle]::FromLTRB(0, 0, Get-SystemMetrics(0), Get-SystemMetrics(1))
+    # 用 v2 风格的 PrimaryScreen.Bounds（v1 原 Get-SystemMetrics 未定义会崩 — PR #669 v3 codex 复盘）
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
@@ -83,29 +96,27 @@ function Take-Screenshot {
     Write-Host "  → 截图已保存: $FilePath" -ForegroundColor Gray
 }
 
-if (-not ("User32" -as [type])) {
-    Add-Type -Name User32 -MemberDefinition @"
-        [DllImport("user32.dll")]
-        public static extern int GetSystemMetrics(int nIndex);
-"@ -Namespace Win32
-}
-
 # ==================== 执行命令并截图 ====================
 
 function Invoke-CxCommand {
     param(
         [string]$Command,
         [string]$ScreenshotFile,
-        [string]$Description
+        [string]$Description,
+        [switch]$DisplayOnly   # 只打印命令字符串作展示，不执行（safety: 避免 cx login 写盘清登录态）
     )
 
     Write-Host "`n▶ $Description" -ForegroundColor Cyan
     Write-Host "  命令: $Command" -ForegroundColor Gray
 
-    # 执行命令
-    $output = Invoke-Expression $command 2>&1
-    if ($output) {
-        Write-Host "  输出: $($output -join '`n')" -ForegroundColor White
+    if (-not $DisplayOnly) {
+        # 执行命令
+        $output = Invoke-Expression $Command 2>&1
+        if ($output) {
+            Write-Host "  输出: $($output -join '`n')" -ForegroundColor White
+        }
+    } else {
+        Write-Host "  (占位命令演示 — 实际登录请先终端外手动 cx login)" -ForegroundColor DarkGray
     }
 
     # 等待
@@ -138,10 +149,11 @@ Invoke-CxCommand -Command "cx --version" `
     -ScreenshotFile "03-version-check.png" `
     -Description "01/10 版本验证"
 
-# 截图 02: 登录
-Invoke-CxCommand -Command "cx login --token $PAT_TOKEN" `
+# 截图 02: 登录（DisplayOnly：仅打印展示，绝不真执行 cx login 以免写盘清登录态）
+Invoke-CxCommand -Command "cx login --token $DISPLAY_PAT_PLACEHOLDER" `
     -ScreenshotFile "04-login-cmd.png" `
-    -Description "02/10 登录"
+    -Description "02/10 登录（占位 PAT 演示，不会真登录）" `
+    -DisplayOnly
 
 # 截图 03: whoami
 Invoke-CxCommand -Command "cx whoami" `

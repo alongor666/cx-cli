@@ -14,7 +14,7 @@ export interface CxConfig {
   tokenId?: string;
 }
 
-const DEFAULT_BASE_URL = 'https://chexian.cretvalu.com';
+export const DEFAULT_BASE_URL = 'https://chexian.cretvalu.com';
 
 function configDir(): string {
   return path.join(os.homedir(), '.chexian');
@@ -22,6 +22,11 @@ function configDir(): string {
 
 function configFile(): string {
   return path.join(configDir(), 'config.json');
+}
+
+/** 配置文件绝对路径（cx config path 用） */
+export function configFilePath(): string {
+  return configFile();
 }
 
 export function loadConfig(): CxConfig {
@@ -38,10 +43,12 @@ export function loadConfig(): CxConfig {
     // 文件损坏忽略，走环境变量或默认
   }
 
+  // token 来自环境变量时，tokenId 必须随之派生（避免显示文件里另一个 token 的 id）
+  const envTokenId = envToken?.match(/^cx_pat_([A-Za-z0-9]+)\./)?.[1];
   return {
     baseUrl: envBase || fileCfg.baseUrl || DEFAULT_BASE_URL,
     token: envToken || fileCfg.token,
-    tokenId: fileCfg.tokenId,
+    tokenId: envToken ? envTokenId : fileCfg.tokenId,
   };
 }
 

@@ -584,7 +584,7 @@
       <div class="col">
         <div class="step-title">联系管理员</div>
         <div class="step-desc">
-          PAT 由管理员在 Web UI 生成，格式为 cx_pat_xxx.yyy
+          PAT 由管理员在 Web UI 生成，格式为 cx_pat_&lt;id&gt;.&lt;secret&gt;
         </div>
       </div>
     </div>
@@ -594,8 +594,8 @@
       <div class="col">
         <div class="step-title">执行登录</div>
         <div class="step-desc">
-          打开命令提示符或 PowerShell，运行：<br>
-          <code style="font-family:var(--mono);font-size:14px;background:rgba(10,31,61,.08);padding:8px 12px;border-radius:4px;margin-top:1vh;display:inline-block">cx login --token cx_pat_xxx.yyy</code>
+          打开命令提示符或 PowerShell，运行交互式登录（masked PAT 输入，不要传 --token）：<br>
+          <code style="font-family:var(--mono);font-size:14px;background:rgba(10,31,61,.08);padding:8px 12px;border-radius:4px;margin-top:1vh;display:inline-block">cx login</code>
         </div>
       </div>
     </div>

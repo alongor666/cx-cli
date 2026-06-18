@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "measured_at": "2026-06-16T00:22:00.288Z",
+  "base_url": "https://chexian.cretvalu.com",
+  "runtime": {
+    "node": "v26.0.0",
+    "bun": "1.3.14"
+  },
+  "mode": "compiled-bin",
+  "samples": 20,
+  "metrics": {
+    "A_cold_start_ms": {
+      "n": 20,
+      "p50": 18,
+      "p95": 19,
+      "min": 18,
+      "max": 19,
+      "warmup": 3
+    },
+    "B_first_remote_ms": {
+      "n": 20,
+      "p50": 318,
+      "p95": 649,
+      "min": 243,
+      "max": 649,
+      "warmup": 3
+    },
+    "C_warm_reuse_ms": {
+      "n": 20,
+      "p50": 53,
+      "p95": 250,
+      "min": 49,
+      "max": 250
+    },
+    "D_batch_100": {
+      "total_ms": 8674,
+      "avg_ms": 87
+    },
+    "E_batch_100_keepalive": {
+      "total_ms": 866,
+      "avg_ms": 9,
+      "concurrency": 8
+    }
+  },
+  "targets": {
+    "_doc": "bench:check 强校验：A=启动效率核心承诺；E=批量加速核心承诺。",
+    "A_cold_start_p95_ms": 50,
+    "E_batch_100_keepalive_total_ms": 1500
+  },
+  "aspirational_targets": {
+    "_doc": "北极星理想，文档展示，不参与 bench:check。",
+    "B_first_remote_p95_ms": 150,
+    "C_warm_reuse_p95_ms": 50
+  }
+}

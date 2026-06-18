@@ -1,19 +1,25 @@
 # cx-cli 自动化截图脚本 v2.0
 #
+# ⚠️ 安全约定（chexian-api PR #669 codex review 沉淀）：
+#   1. 本脚本生成的截图保存到 ./images/ — 该目录已在 cli/.gitignore 中被忽略
+#   2. 截图前请**先手动运行 `cx login`**（交互式 masked prompt），使本机进入已登录态
+#   3. 本脚本只截图**已登录后**的命令输出（cx whoami / cx routes / cx query 等）
+#   4. **不再**截图 `cx login --token <PAT>` 这一步（避免真 PAT 入 PNG）
+#   5. 若必须演示 cx login 流程，请用占位 PAT `cx_pat_PLACEHOLDER.example` 截图后再人工标注
+#
 # 使用方法：
-# 1. 编辑脚本开头的配置区（PAT_TOKEN 和 QUERY_YEAR）
-# 2. 右键点击 → 使用 PowerShell 运行
-# 3. 或在 PowerShell 中运行：.\capture-screenshots-v2.ps1
+# 1. 终端先运行 `cx login` 完成登录（PAT masked 输入，不入截图）
+# 2. 在 PowerShell 中运行：.\capture-screenshots-v2.ps1
 #
 # 前置条件：
 # - 已安装 cx-windows.exe 并添加到 PATH
-# - 已准备好有效的 PAT token
+# - 已通过 `cx login` 进入登录态（验证：cx whoami 不报 401）
 # - Windows 10/11（使用内置截图工具）
 
-# ==================== 配置区（⚠️ 必填）====================
+# ==================== 配置区 ====================
 
-# 配置你的 PAT token（必填）
-$PAT_TOKEN = "cx_pat_xxx.yyy"  # ⚠️ 替换为你的真实 token
+# 演示用占位 PAT（仅用于必要时截取 cx login 命令示例，不可换成真实 token）
+$DISPLAY_PAT_PLACEHOLDER = "cx_pat_PLACEHOLDER.example_replace_with_yours_locally_DO_NOT_COMMIT"
 
 # 查询参数配置
 $QUERY_YEAR = "2026"  # 根据实际数据修改年份
@@ -59,10 +65,12 @@ try {
 
 Write-Host ""
 
-# 检查 PAT_TOKEN 是否已配置
-if ($PAT_TOKEN -eq "cx_pat_xxx.yyy") {
-    Write-Host "✗ 警告: PAT_TOKEN 未配置" -ForegroundColor Red
-    Write-Host "  请编辑脚本第 18 行，替换为你的真实 token" -ForegroundColor Yellow
+# 检查是否已经 cx login 完毕（截图前置条件，替代旧版的 PAT_TOKEN 检查）
+$loginCheck = & cx whoami 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "✗ 警告: 你尚未 cx login" -ForegroundColor Red
+    Write-Host "  请先在终端运行：cx login（交互式 masked PAT 输入）" -ForegroundColor Yellow
+    Write-Host "  确认 cx whoami 不报 401 后再跑本截图脚本" -ForegroundColor Yellow
     Read-Host "`n按回车键退出"
     exit 1
 }
@@ -107,7 +115,8 @@ function Invoke-CxScreenshot {
         [string]$Command,
         [string]$FileName,
         [string]$Title,
-        [string]$Prompt
+        [string]$Prompt,
+        [switch]$DisplayOnly   # 只打印命令字符串作展示，不执行（safety: 避免 cx login 写盘清登录态）
     )
 
     Write-Host "`n----------------------------------------" -ForegroundColor Gray
@@ -122,20 +131,21 @@ function Invoke-CxScreenshot {
     Write-Host "`n  准备好后按回车键继续..." -ForegroundColor Gray
     Read-Host
 
-    # 清空屏幕（可选，让截图更干净）
-    # Clear-Host
-
     # 显示提示信息
     Write-Host "`n========================================" -ForegroundColor Gray
     Write-Host "  cx-cli 截图中..." -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Gray
 
-    # 执行命令
+    # 显示命令（只打印 prompt 风格的命令行，不真跑——避免 cx login --token 写盘清登录态）
     Write-Host "`nPS> $Command" -ForegroundColor White
-    $output = Invoke-Expression $Command 2>&1
 
-    if ($output) {
-        Write-Host "$output" -ForegroundColor White
+    if (-not $DisplayOnly) {
+        $output = Invoke-Expression $Command 2>&1
+        if ($output) {
+            Write-Host "$output" -ForegroundColor White
+        }
+    } else {
+        Write-Host "(占位命令演示 — 实际登录请先终端外手动 cx login)" -ForegroundColor DarkGray
     }
 
     # 等待输出稳定
@@ -192,11 +202,12 @@ Invoke-CxScreenshot -Command "cx --version" `
     -Title "01/10 版本验证" `
     -Prompt "确认 cx 命令可用"
 
-# 02. 登录
-Invoke-CxScreenshot -Command "cx login --token $PAT_TOKEN" `
+# 02. 登录（DisplayOnly：仅打印命令字符串展示，绝不真执行 cx login 以免写盘清登录态）
+Invoke-CxScreenshot -Command "cx login --token $DISPLAY_PAT_PLACEHOLDER" `
     -FileName "04-login-cmd.png" `
-    -Title "02/10 登录" `
-    -Prompt "将使用你配置的 PAT token"
+    -Title "02/10 登录（占位 PAT 演示，不会真登录）" `
+    -Prompt "屏幕显示占位 PAT；请先在终端外手动 cx login 完成真登录" `
+    -DisplayOnly
 
 # 03. 查看身份
 Invoke-CxScreenshot -Command "cx whoami" `

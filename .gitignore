@@ -4,3 +4,6 @@ bundle/
 release/
 *.tgz
 .DS_Store
+
+# Screenshot output（防止含真 PAT 的本机截图被同步到公开 cx-cli）
+manual/images/

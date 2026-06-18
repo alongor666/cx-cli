@@ -1,7 +1,7 @@
 {
   "name": "@chexian/cli",
-  "version": "1.0.0",
-  "description": "车险数据只读 CLI — PAT 鉴权，cx query/login/whoami/sql/fields/metrics/presets",
+  "version": "0.2.0",
+  "description": "chexian-api 只读 CLI（PAT 鉴权，cx query/login/whoami）",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -9,34 +9,25 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:bin": "bun build src/index.ts --compile --minify --outfile dist/cx",
+    "build:bin:all": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/cx-darwin-arm64 && bun build src/index.ts --compile --minify --target=bun-darwin-x64 --outfile dist/cx-darwin-x64 && bun build src/index.ts --compile --minify --target=bun-linux-x64 --outfile dist/cx-linux-x64 && bun build src/index.ts --compile --minify --target=bun-linux-arm64 --outfile dist/cx-linux-arm64",
     "dev": "tsx src/index.ts",
-    "test": "vitest --run",
-    "prepublishOnly": "npm run build",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=bundle/cx.cjs",
-    "build:exe:win": "npm run bundle && pkg bundle/cx.cjs --target node22-win-x64 --output release/cx-windows.exe",
-    "build:exe:mac": "npm run bundle && pkg bundle/cx.cjs --target node22-macos-x64 --output release/cx-mac"
+    "bench": "node scripts/benchmark.mjs",
+    "bench:write": "node scripts/benchmark.mjs --write",
+    "bench:check": "node scripts/benchmark.mjs --check",
+    "test": "vitest --run"
   },
   "dependencies": {
-    "commander": "^12.1.0",
     "cli-table3": "^0.6.5",
-    "kleur": "^4.1.5"
+    "commander": "^12.1.0",
+    "kleur": "^4.1.5",
+    "undici": "^6.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
-    "@yao-pkg/pkg": "^5.12.0",
-    "esbuild": "^0.25.0",
     "tsx": "^4.7.0",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^3.2.6"
   },
-  "files": ["dist", "README.md"],
-  "keywords": ["chexian", "car-insurance", "cli", "data-query"],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/alongor666/cx-cli.git"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "files": ["dist", "README.md"]
 }
