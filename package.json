@@ -15,6 +15,9 @@
     "bench": "node scripts/benchmark.mjs",
     "bench:write": "node scripts/benchmark.mjs --write",
     "bench:check": "node scripts/benchmark.mjs --check",
+    "ux": "node scripts/ux-baseline.mjs",
+    "ux:write": "node scripts/ux-baseline.mjs --write",
+    "ux:check": "node scripts/ux-baseline.mjs --check",
     "test": "vitest --run"
   },
   "dependencies": {

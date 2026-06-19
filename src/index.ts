@@ -32,7 +32,8 @@ import {
 } from './commands/config-cmd.js';
 import { completionCommand } from './commands/completion.js';
 import { apiDebug } from './api.js';
-import { EXIT } from './exit-codes.js';
+import kleur from 'kleur';
+import { EXIT, exitCodeForError } from './exit-codes.js';
 
 const program = new Command();
 
@@ -245,7 +246,37 @@ program
   .description('输出 shell 补全脚本（bash | zsh）')
   .action(completionCommand);
 
+// 退出码契约统一化：commander 内置校验错误（缺参数 / 未知命令 / 未知选项）默认走 "error:" + exit 1，
+// 这绕过了 failWith 出口。递归给所有命令（含 config 嵌套子命令）挂 exitOverride 改为抛错，
+// 并把默认 "error: xxx" 重渲染为 "✘ xxx" + 可操作提示，最终由下方 catch 统一映射到 exit 4。
+// 帮助文本走 writeOut（stdout）不受影响，已快照的 <cmd> --help 输出零漂移。
+function applyExitContract(cmd: Command): void {
+  cmd.exitOverride();
+  cmd.configureOutput({
+    writeErr: (str) => {
+      if (str.startsWith('error: ')) {
+        process.stderr.write(kleur.red('✘ ' + str.slice('error: '.length)));
+        process.stderr.write(kleur.dim('  运行 cx --help 或 cx <命令> --help 查看用法') + '\n');
+      } else {
+        process.stderr.write(str); // 无命令时的 help 输出等原样透传
+      }
+    },
+  });
+  cmd.commands.forEach(applyExitContract);
+}
+applyExitContract(program);
+
 program.parseAsync(process.argv).catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(EXIT.GENERAL);
+  const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+  // 帮助 / 版本展示：正常退出（writeOut 已打印内容）
+  if (code === 'commander.helpDisplayed' || code === 'commander.help' || code === 'commander.version') {
+    process.exit(EXIT.OK);
+  }
+  // commander 内置用法错误：消息已由 writeErr 渲染为 ✘ + 提示，这里只定退出码
+  if (code.startsWith('commander.')) {
+    process.exit(EXIT.USAGE);
+  }
+  // 其它运行时错误：✘ 前缀 + 按错误类型映射退出码（CxApiError 401→2 / 403→3 / 429→5）
+  process.stderr.write((err instanceof Error ? kleur.red(`✘ ${err.message}`) : String(err)) + '\n');
+  process.exit(exitCodeForError(err));
 });

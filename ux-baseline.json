@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
+  "measured_at": "2026-06-19T01:12:19.375Z",
+  "runner": "tsx",
+  "dimensions": {
+    "consistency": {
+      "_doc": "跨命令退出码契约 / 报错前缀 / 帮助可达性。known_violations 为已知债务（棘轮：不可新增）。",
+      "rules": {
+        "R1_help_listed": "每个子命令出现在根帮助 Commands 区",
+        "R2_help_exit0": "每个子命令 <cmd> --help 退出码为 0",
+        "R3_auth_exit2": "无 PAT 的鉴权失败统一 exit 2（鉴权失败契约）",
+        "R4_usage_exit4": "用法错误（缺参数 / 缺子命令 / 未知命令）统一 exit 4（用法错误契约）",
+        "R5_error_prefix": "错误信息统一以 \"✘ \" 前缀打到 stderr（failWith 出口）"
+      },
+      "known_violations": []
+    },
+    "rendering": {
+      "_doc": "帮助 + 报错/离线输出的黄金快照 = 用户真正看到的字面，逐字节守护。",
+      "snapshots": {
+        "help-root": {
+          "argv": [
+            "--help"
+          ],
+          "doc": "根帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx [options] [command]\n\nchexian-api 只读 CLI（PAT 鉴权）— 车险数据分析平台命令行入口\n\nOptions:\n  -V, --version               output the version number\n  --no-color                  禁用彩色输出（也尊重 NO_COLOR 环境变量）\n  -q, --quiet                 抑制提示性输出（错误仍打印到 stderr）\n  --verbose                   stderr 打印请求 URL 与耗时\n  -h, --help                  display help for command\n\nCommands:\n  login [options]             保存 PAT 到 ~/.chexian/config.json（chmod 600）\n  logout                      清除本地保存的 PAT（不会吊销服务端 token）\n  whoami                      显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n  routes [options]            列出所有可用查询路由（按 tag 分组）\n  query [options] [key|path]  调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺 key\n                              或 -i 进入交互式构建器\n  sql [options] <query>       DuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n  fields [options]            列出字段注册表。--groupable 仅列可分组（VARCHAR/TEXT）字段。\n  metrics [options]           列出指标注册表。--category 按分类过滤。\n  presets [options]           列出筛选器 schema 与车型快捷预设。\n  filters [options]           列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh 强刷\n  data [options] <sub>        数据域只读元信息：version（数据新鲜度）| files（文件清单）|\n                              metadata（数据集元数据）\n  health [options]            一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n  batch [options]             从 stdin 读 JSONL（{route, params?}）批量调用，复用\n                              keep-alive 连接\n  config                      管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n  completion <shell>          输出 shell 补全脚本（bash | zsh）\n  help [command]              display help for command\n\n示例:\n  $ cx login                          保存 PAT\n  $ cx routes --search 赔案           按关键词找路由\n  $ cx query KPI --year=2026          调用 KPI 查询\n  $ cx query /repair/overview         path 直通调用\n  $ echo \"SELECT ...\" | cx sql -      stdin 管道 SQL\n  $ cx health                         连通性诊断\n\n退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流",
+          "stderr": ""
+        },
+        "help-login": {
+          "argv": [
+            "login",
+            "--help"
+          ],
+          "doc": "login 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx login [options]\n\n保存 PAT 到 ~/.chexian/config.json（chmod 600）\n\nOptions:\n  -t, --token <pat>     直接传入 PAT（也支持 stdin/交互式）\n  -b, --base-url <url>  后端 baseUrl，覆盖默认 https://chexian.cretvalu.com\n  -h, --help            display help for command",
+          "stderr": ""
+        },
+        "help-logout": {
+          "argv": [
+            "logout",
+            "--help"
+          ],
+          "doc": "logout 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx logout [options]\n\n清除本地保存的 PAT（不会吊销服务端 token）\n\nOptions:\n  -h, --help  display help for command",
+          "stderr": ""
+        },
+        "help-whoami": {
+          "argv": [
+            "whoami",
+            "--help"
+          ],
+          "doc": "whoami 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx whoami [options]\n\n显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n\nOptions:\n  -h, --help  display help for command",
+          "stderr": ""
+        },
+        "help-routes": {
+          "argv": [
+            "routes",
+            "--help"
+          ],
+          "doc": "routes 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx routes [options]\n\n列出所有可用查询路由（按 tag 分组）\n\nOptions:\n  --refresh           强制刷新 route-catalog 缓存\n  --tag <tag>         按 tag 过滤（如 kpi / trend / claims-detail / repair）\n  --search <kw>       按关键词搜索 key/path/summary/description\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command\n\n示例:\n  $ cx routes --tag claims-detail\n  $ cx routes --search 维修\n  $ cx routes --format=json | jq '.[].key'",
+          "stderr": ""
+        },
+        "help-query": {
+          "argv": [
+            "query",
+            "--help"
+          ],
+          "doc": "query 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx query [options] [key|path]\n\n调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺 key 或 -i 进入交互式构建器\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv（非终端默认 json）\n  -l, --limit <n>     客户端截断行数（仅列表型响应）\n  --timeout <ms>      请求超时毫秒数\n  -i, --interactive   交互式构建查询（无 key 时自动进入）\n  -h, --help          display help for command\n\n示例:\n  $ cx query                                  （无 key → 交互式 wizard）\n  $ cx query -i                               （强制 wizard）\n  $ cx query KPI --year=2026 --org_level_3=分公司A\n  $ cx query claims-detail-heatmap --dateStart=2026-01-01\n  $ cx query /patrol/renewal                    （path 直通）\n  $ cx query PATROL --domain=renewal            （path 模板参数）\n  $ cx query TREND --limit=10 --format=csv",
+          "stderr": ""
+        },
+        "help-sql": {
+          "argv": [
+            "sql",
+            "--help"
+          ],
+          "doc": "sql 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx sql [options] <query>\n\nDuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  --timeout <ms>      请求超时毫秒数\n  -h, --help          display help for command\n\n示例:\n  $ cx sql \"SELECT customer_category, COUNT(*) c FROM PolicyFact GROUP BY 1\"\n  $ echo \"SELECT org_level_3, SUM(premium) FROM PolicyFact GROUP BY 1\" | cx sql -",
+          "stderr": ""
+        },
+        "help-fields": {
+          "argv": [
+            "fields",
+            "--help"
+          ],
+          "doc": "fields 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx fields [options]\n\n列出字段注册表。--groupable 仅列可分组（VARCHAR/TEXT）字段。\n\nOptions:\n  --groupable         只列出可分组字段\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-metrics": {
+          "argv": [
+            "metrics",
+            "--help"
+          ],
+          "doc": "metrics 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-presets": {
+          "argv": [
+            "presets",
+            "--help"
+          ],
+          "doc": "presets 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx presets [options]\n\n列出筛选器 schema 与车型快捷预设。\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-filters": {
+          "argv": [
+            "filters",
+            "--help"
+          ],
+          "doc": "filters 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx filters [options]\n\n列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh 强刷\n\nOptions:\n  --dimension <name>  只看指定维度（如 org_level_3）\n  --refresh           强制刷新本地缓存（按 PAT tokenId 隔离）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command\n\n示例:\n  $ cx filters --dimension org_level_3\n  $ cx filters --refresh                  强制重新拉取",
+          "stderr": ""
+        },
+        "help-data": {
+          "argv": [
+            "data",
+            "--help"
+          ],
+          "doc": "data 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx data [options] <sub>\n\n数据域只读元信息：version（数据新鲜度）| files（文件清单）| metadata（数据集元数据）\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command\n\n示例:\n  $ cx data version       查看当前数据日期（ETL 新鲜度）\n  $ cx data files         已加载数据文件清单",
+          "stderr": ""
+        },
+        "help-health": {
+          "argv": [
+            "health",
+            "--help"
+          ],
+          "doc": "health 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx health [options]\n\n一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-batch": {
+          "argv": [
+            "batch",
+            "--help"
+          ],
+          "doc": "batch 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx batch [options]\n\n从 stdin 读 JSONL（{route, params?}）批量调用，复用 keep-alive 连接\n\nOptions:\n  -c, --concurrency <n>  并发数（默认 8） (default: \"8\")\n  --summary              末尾在 stderr 输出汇总（total/ok/fail/p50/p95/total_ms）\n  --timeout <ms>         单次请求超时毫秒数\n  -h, --help             display help for command\n\n路由寻址（同 cx query）:\n  catalog key   route: \"KPI\"                  → 大小写/连字符宽容（/-_ 互通）\n  catalog path  route: \"/kpi\"                 → 包装为 /api/query/kpi\n  /api/* 直通   route: \"/api/data/version\"    → 不加前缀\n  顶层直通      route: \"/health\"              → 不在 catalog 时 fall back 顶层\n\n示例:\n  $ echo '{\"route\":\"KPI\",\"params\":{\"year\":2026}}' | cx batch --summary\n  $ printf '{\"route\":\"/health\"}\\n%.0s' {1..50} | cx batch --concurrency=4 --summary\n  $ cx routes --format=json | jq -c '.[] | {route: .path}' | cx batch",
+          "stderr": ""
+        },
+        "help-config": {
+          "argv": [
+            "config",
+            "--help"
+          ],
+          "doc": "config 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx config [options] [command]\n\n管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n\nOptions:\n  -h, --help         display help for command\n\nCommands:\n  get <key>          读取配置项\n  set <key> <value>  写入配置项（baseUrl 校验 URL 格式）\n  unset <key>        清除配置项（恢复默认）\n  list               列出全部配置（token 脱敏）\n  path               打印配置文件路径\n  help [command]     display help for command\n\n示例:\n  $ cx config set baseUrl http://localhost:3000    切到本地后端\n  $ cx config unset baseUrl                        恢复生产默认",
+          "stderr": ""
+        },
+        "help-completion": {
+          "argv": [
+            "completion",
+            "--help"
+          ],
+          "doc": "completion 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx completion [options] <shell>\n\n输出 shell 补全脚本（bash | zsh）\n\nOptions:\n  -h, --help  display help for command",
+          "stderr": ""
+        },
+        "err-whoami-nopat": {
+          "argv": [
+            "whoami"
+          ],
+          "doc": "无 PAT whoami（应 exit 2 + 可操作提示）",
+          "exitCode": 2,
+          "stdout": "",
+          "stderr": "✘ No PAT configured. Run: cx login"
+        },
+        "err-query-nopat": {
+          "argv": [
+            "query",
+            "KPI",
+            "--year=2026"
+          ],
+          "doc": "无 PAT query（应 exit 2）",
+          "exitCode": 2,
+          "stdout": "",
+          "stderr": "✘ No PAT configured. Run: cx login"
+        },
+        "err-sql-nopat": {
+          "argv": [
+            "sql",
+            "SELECT 1"
+          ],
+          "doc": "无 PAT sql（应 exit 2）",
+          "exitCode": 2,
+          "stdout": "",
+          "stderr": "✘ No PAT configured. Run: cx login"
+        },
+        "err-completion-noarg": {
+          "argv": [
+            "completion"
+          ],
+          "doc": "completion 缺参数（用法错误）",
+          "exitCode": 4,
+          "stdout": "",
+          "stderr": "✘ missing required argument 'shell'\n  运行 cx --help 或 cx <命令> --help 查看用法"
+        },
+        "err-data-nosub": {
+          "argv": [
+            "data"
+          ],
+          "doc": "data 缺子命令（用法错误）",
+          "exitCode": 4,
+          "stdout": "",
+          "stderr": "✘ missing required argument 'sub'\n  运行 cx --help 或 cx <命令> --help 查看用法"
+        },
+        "err-unknown-cmd": {
+          "argv": [
+            "foobar"
+          ],
+          "doc": "未知命令（用法错误）",
+          "exitCode": 4,
+          "stdout": "",
+          "stderr": "✘ unknown command 'foobar'\n  运行 cx --help 或 cx <命令> --help 查看用法"
+        },
+        "ok-config-get": {
+          "argv": [
+            "config",
+            "get",
+            "baseUrl"
+          ],
+          "doc": "config get（离线 exit 0）",
+          "exitCode": 0,
+          "stdout": "https://chexian.cretvalu.com",
+          "stderr": ""
+        }
+      }
+    },
+    "journey": {
+      "_status": "measured",
+      "_doc": "time-to-first-success：新用户 login 后，whoami 确认身份 + 首次成功 query 的总耗时。功能门禁=两步均 exit 0，计时记录不硬闸。",
+      "steps_after_login": 2,
+      "first_success": true,
+      "whoami_ms": {
+        "n": 5,
+        "p50": 408,
+        "p95": 471,
+        "mean": 423,
+        "cv": 0.08
+      },
+      "first_query_ms": {
+        "n": 5,
+        "p50": 412,
+        "p95": 10914,
+        "mean": 2508,
+        "cv": 1.675
+      },
+      "time_to_first_success_ms": {
+        "n": 5,
+        "p50": 856,
+        "p95": 11313,
+        "mean": 2931,
+        "cv": 1.43
+      }
+    },
+    "discoverability": {
+      "_doc": "报错可操作率 = 给出下一步的报错 / 全部报错。目标 1.0，棘轮：不可下降。",
+      "errors_total": 6,
+      "errors_actionable_ratio": 1,
+      "target": 1,
+      "non_actionable": []
+    }
+  }
+}
