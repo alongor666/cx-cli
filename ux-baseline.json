@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-06-19T01:12:19.375Z",
+  "measured_at": "2026-06-19T15:04:32.776Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -24,7 +24,7 @@
           ],
           "doc": "根帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx [options] [command]\n\nchexian-api 只读 CLI（PAT 鉴权）— 车险数据分析平台命令行入口\n\nOptions:\n  -V, --version               output the version number\n  --no-color                  禁用彩色输出（也尊重 NO_COLOR 环境变量）\n  -q, --quiet                 抑制提示性输出（错误仍打印到 stderr）\n  --verbose                   stderr 打印请求 URL 与耗时\n  -h, --help                  display help for command\n\nCommands:\n  login [options]             保存 PAT 到 ~/.chexian/config.json（chmod 600）\n  logout                      清除本地保存的 PAT（不会吊销服务端 token）\n  whoami                      显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n  routes [options]            列出所有可用查询路由（按 tag 分组）\n  query [options] [key|path]  调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺 key\n                              或 -i 进入交互式构建器\n  sql [options] <query>       DuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n  fields [options]            列出字段注册表。--groupable 仅列可分组（VARCHAR/TEXT）字段。\n  metrics [options]           列出指标注册表。--category 按分类过滤。\n  presets [options]           列出筛选器 schema 与车型快捷预设。\n  filters [options]           列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh 强刷\n  data [options] <sub>        数据域只读元信息：version（数据新鲜度）| files（文件清单）|\n                              metadata（数据集元数据）\n  health [options]            一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n  batch [options]             从 stdin 读 JSONL（{route, params?}）批量调用，复用\n                              keep-alive 连接\n  config                      管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n  completion <shell>          输出 shell 补全脚本（bash | zsh）\n  help [command]              display help for command\n\n示例:\n  $ cx login                          保存 PAT\n  $ cx routes --search 赔案           按关键词找路由\n  $ cx query KPI --year=2026          调用 KPI 查询\n  $ cx query /repair/overview         path 直通调用\n  $ echo \"SELECT ...\" | cx sql -      stdin 管道 SQL\n  $ cx health                         连通性诊断\n\n退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流",
+          "stdout": "Usage: cx [options] [command]\n\nchexian-api 只读 CLI（PAT 鉴权）— 车险数据分析平台命令行入口\n\nOptions:\n  -V, --version                  output the version number\n  --no-color                     禁用彩色输出（也尊重 NO_COLOR 环境变量）\n  -q, --quiet                    抑制提示性输出（错误仍打印到 stderr）\n  --verbose                      stderr 打印请求 URL 与耗时\n  -h, --help                     display help for command\n\nCommands:\n  login [options]                保存 PAT 到 ~/.chexian/config.json（chmod 600）\n  logout                         清除本地保存的 PAT（不会吊销服务端 token）\n  whoami                         显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n  routes [options]               列出所有可用查询路由（按 tag 分组）\n  query [options] [key|path]     调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺\n                                 key 或 -i 进入交互式构建器\n  sql [options] <query>          DuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n  fields [options]               列出字段注册表。--groupable 仅列可分组（VARCHAR/TEXT）字段。\n  metrics [options]              列出指标注册表。--category 按分类过滤。\n  describe [options] <relation>  自省视图 schema（列名/类型）。relation\n                                 须在联邦白名单内（PolicyFact / RenewalTrackerFact\n                                 等派生视图）。\n  presets [options]              列出筛选器 schema 与车型快捷预设。\n  filters [options]              列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh\n                                 强刷\n  data [options] <sub>           数据域只读元信息：version（数据新鲜度）| files（文件清单）|\n                                 metadata（数据集元数据）\n  health [options]               一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n  batch [options]                从 stdin 读 JSONL（{route, params?}）批量调用，复用\n                                 keep-alive 连接\n  config                         管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n  completion <shell>             输出 shell 补全脚本（bash | zsh）\n  help [command]                 display help for command\n\n示例:\n  $ cx login                          保存 PAT\n  $ cx routes --search 赔案           按关键词找路由\n  $ cx query KPI --year=2026          调用 KPI 查询\n  $ cx query /repair/overview         path 直通调用\n  $ echo \"SELECT ...\" | cx sql -      stdin 管道 SQL\n  $ cx health                         连通性诊断\n\n退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流",
           "stderr": ""
         },
         "help-login": {
@@ -104,7 +104,7 @@
           ],
           "doc": "metrics 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
           "stderr": ""
         },
         "help-presets": {
@@ -248,31 +248,8 @@
       }
     },
     "journey": {
-      "_status": "measured",
-      "_doc": "time-to-first-success：新用户 login 后，whoami 确认身份 + 首次成功 query 的总耗时。功能门禁=两步均 exit 0，计时记录不硬闸。",
-      "steps_after_login": 2,
-      "first_success": true,
-      "whoami_ms": {
-        "n": 5,
-        "p50": 408,
-        "p95": 471,
-        "mean": 423,
-        "cv": 0.08
-      },
-      "first_query_ms": {
-        "n": 5,
-        "p50": 412,
-        "p95": 10914,
-        "mean": 2508,
-        "cv": 1.675
-      },
-      "time_to_first_success_ms": {
-        "n": 5,
-        "p50": 856,
-        "p95": 11313,
-        "mean": 2931,
-        "cv": 1.43
-      }
+      "_status": "pending",
+      "_note": "加 --journey 触发 live 测量（需 PAT + server）"
     },
     "discoverability": {
       "_doc": "报错可操作率 = 给出下一步的报错 / 全部报错。目标 1.0，棘轮：不可下降。",

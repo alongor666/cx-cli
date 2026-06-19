@@ -20,6 +20,7 @@ import { queryCommand, parseExtraParams } from './commands/query.js';
 // 保持非交互冷启动的零依赖载入（CI cli-perf-sentinel 闸）
 import { fieldsCommand } from './commands/fields.js';
 import { metricsCommand } from './commands/metrics.js';
+import { describeCommand } from './commands/describe.js';
 import { presetsCommand } from './commands/presets.js';
 import { sqlCommand } from './commands/sql.js';
 import { filtersCommand } from './commands/filters.js';
@@ -152,10 +153,18 @@ program
 program
   .command('metrics')
   .description('列出指标注册表。--category 按分类过滤。')
-  .option('--category <cat>', '指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure）')
+  .option('--category <cat>', '指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal）')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
     metricsCommand({ category: options.category, format: options.format });
+  });
+
+program
+  .command('describe <relation>')
+  .description('自省视图 schema（列名/类型）。relation 须在联邦白名单内（PolicyFact / RenewalTrackerFact 等派生视图）。')
+  .option('-f, --format <fmt>', '输出格式 table|json|csv')
+  .action((relation, options) => {
+    describeCommand(relation, { format: options.format });
   });
 
 program
