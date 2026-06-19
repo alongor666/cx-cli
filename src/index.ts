@@ -145,11 +145,16 @@ program
 
 program
   .command('fields')
-  .description('列出字段注册表。--groupable 仅列可分组（VARCHAR/TEXT）字段。')
+  .description('列出字段注册表（含 column 可查列名 / queryable / 真实类型）。--groupable 仅列可分组字段；--verbose 附 ETL 入库别名。')
   .option('--groupable', '只列出可分组字段')
+  .option('--verbose', '附带 ETL 入库元数据（ingestTypes/ingestAliases，不可 SELECT）')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
-    fieldsCommand({ groupable: Boolean(options.groupable), format: options.format });
+    fieldsCommand({
+      groupable: Boolean(options.groupable),
+      verbose: Boolean(options.verbose),
+      format: options.format,
+    });
   });
 
 program
