@@ -74,7 +74,11 @@ export async function routesCommand(opts: {
 
     const fmt: OutputFormat = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
     if (fmt !== 'table') {
-      console.log(renderOutput(routes.map(({ key, path, summary, timeWindow, tags }) => ({ key, path, summary, timeWindow: timeWindow ?? '', tags: tags.join(',') })), fmt));
+      // JSON / CSV 输出含 parameters，让 agent 一次发现就拿到完整 schema（含 enum）。
+      // CSV 渲染会把 parameters 数组序列化为 JSON 字符串，agent 解析后即可用。
+      console.log(renderOutput(routes.map(({ key, path, summary, timeWindow, tags, parameters }) => ({
+        key, path, summary, timeWindow: timeWindow ?? '', tags: tags.join(','), parameters: parameters ?? [],
+      })), fmt));
       return;
     }
 
