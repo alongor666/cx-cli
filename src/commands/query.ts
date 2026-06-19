@@ -22,6 +22,26 @@ export interface QueryOpts {
   limit?: number;
   /** 请求超时（毫秒） */
   timeoutMs?: number;
+  /** 打印字段图例（裸输出列 → 中文名 / 口径 / 单位 + 生效时间口径），消灭 A-E 裸字母 */
+  describe?: boolean;
+}
+
+/** /api/discover/legend 响应中的单列图例 */
+interface LegendColumn {
+  column: string;
+  metricId: string;
+  label: string;
+  description: string;
+  unit: string;
+}
+
+/** /api/discover/legend 响应的图例对象 */
+interface RouteFieldLegend {
+  route: string;
+  summary: string;
+  timeWindow: string;
+  timeWindowNote?: string;
+  columns: LegendColumn[];
 }
 
 interface RouteTarget {
@@ -40,6 +60,12 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
     }
     if (refreshed) note(kleur.gray('(本地缓存未命中，已自动刷新 route-catalog)'));
 
+    // --describe：先把字段图例打到 stderr（口径来自服务端 metric-registry 单一事实源），
+    // 再正常返回数据到 stdout（保持管道纯净）。图例失败不阻断数据。
+    if (opts.describe) {
+      await printRouteLegend(route.key, opts.params);
+    }
+
     const { resolvedPath, restArgs } = applyPathParams(route.fullPath, opts.params);
     const data = await cxGet<unknown>(resolvedPath, { query: restArgs, timeoutMs: opts.timeoutMs });
     const fmt: OutputFormat = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
@@ -53,6 +79,55 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
   } catch (err) {
     failWith(err);
   }
+}
+
+/**
+ * 拉取并打印路由字段图例到 stderr（口径事实源 = 服务端 metric-registry）。
+ * 图例是辅助信息：获取失败或路由无图例时降级提示，绝不阻断主数据查询。
+ */
+async function printRouteLegend(routeKey: string, params: Record<string, string>): Promise<void> {
+  try {
+    const resp = await cxGet<{ success: boolean; data: RouteFieldLegend | null }>(
+      '/api/discover/legend',
+      { query: { route: routeKey } },
+    );
+    const legend = resp?.data ?? null;
+    if (!legend) {
+      note(kleur.gray(`(路由 ${routeKey} 暂无字段图例)`));
+      return;
+    }
+    process.stderr.write(formatLegend(legend, params) + '\n');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    note(kleur.yellow(`(字段图例获取失败，继续返回数据：${msg})`));
+  }
+}
+
+/**
+ * 把图例对象渲染为人类可读文本块（标题 + 时间口径 + 生效参数 + 列字典表）。
+ * 纯函数，便于单测。
+ */
+export function formatLegend(legend: RouteFieldLegend, params: Record<string, string>): string {
+  const lines: string[] = [];
+  lines.push(kleur.bold(`字段图例 — ${legend.route}（${legend.summary}）`));
+  const tw = legend.timeWindowNote
+    ? `${legend.timeWindow} · ${legend.timeWindowNote}`
+    : legend.timeWindow;
+  lines.push(kleur.gray(`时间口径: ${tw}`));
+  const timeParams = ['start', 'end', 'cutoff', 'startDate', 'endDate', 'dateStart', 'dateEnd']
+    .filter((k) => params[k] !== undefined)
+    .map((k) => `${k}=${params[k]}`);
+  if (timeParams.length > 0) {
+    lines.push(kleur.gray(`生效参数: ${timeParams.join(' ')}`));
+  }
+  const rows = legend.columns.map((c) => ({
+    列: c.column,
+    名称: c.label,
+    口径: c.description,
+    单位: c.unit,
+  }));
+  lines.push(renderOutput(rows, 'table'));
+  return lines.join('\n');
 }
 
 /**

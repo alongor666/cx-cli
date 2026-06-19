@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseExtraParams, resolveTarget, resolveWithRefresh } from '../commands/query.js';
+import { parseExtraParams, resolveTarget, resolveWithRefresh, formatLegend } from '../commands/query.js';
 import { applyPathParams } from '../path-params.js';
 
 describe('parseExtraParams', () => {
@@ -99,5 +99,49 @@ describe('applyPathParams (cli)', () => {
 
   it('缺少 path 参数时抛错', () => {
     expect(() => applyPathParams('/api/query/patrol/:domain', {})).toThrow(/domain/);
+  });
+});
+
+describe('formatLegend (cx query --describe)', () => {
+  const legend = {
+    route: 'RENEWAL_TRACKER',
+    summary: '续保追踪',
+    timeWindow: 'window',
+    timeWindowNote: 'start/end 为保单【到期】窗口（续保盯盘口径），非签单日期窗口',
+    columns: [
+      { column: 'A', metricId: 'renewal_due_count', label: '应续件数', description: '续保窗口内应续保的车辆件数（按车架号去重）', unit: '件' },
+      { column: 'C', metricId: 'renewal_renewed_count', label: '已续件数', description: '应续车中已签单成交续保的件数', unit: '件' },
+    ],
+  };
+
+  it('标题含路由 key + 摘要，消灭裸字母（列字母 + 中文名同现）', () => {
+    const out = formatLegend(legend, {});
+    expect(out).toContain('字段图例');
+    expect(out).toContain('RENEWAL_TRACKER');
+    expect(out).toContain('续保追踪');
+    // A 裸字母与中文名「应续件数」在同一图例里被绑定呈现
+    expect(out).toContain('A');
+    expect(out).toContain('应续件数');
+    expect(out).toContain('已续件数');
+  });
+
+  it('展示时间口径（含到期窗口说明）', () => {
+    const out = formatLegend(legend, {});
+    expect(out).toContain('时间口径');
+    expect(out).toContain('到期');
+  });
+
+  it('回显生效时间参数（start/end/cutoff）', () => {
+    const out = formatLegend(legend, { start: '2026-06-01', end: '2026-06-30', cutoff: '2026-06-18', orgNames: '天府' });
+    expect(out).toContain('生效参数');
+    expect(out).toContain('start=2026-06-01');
+    expect(out).toContain('cutoff=2026-06-18');
+    // 非时间参数不混入「生效参数」行
+    expect(out).not.toContain('orgNames=天府');
+  });
+
+  it('无时间参数时不打印「生效参数」行', () => {
+    const out = formatLegend(legend, { orgNames: '天府' });
+    expect(out).not.toContain('生效参数');
   });
 });

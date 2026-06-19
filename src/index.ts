@@ -102,6 +102,7 @@ program
   .option('-l, --limit <n>', '客户端截断行数（仅列表型响应）')
   .option('--timeout <ms>', '请求超时毫秒数')
   .option('-i, --interactive', '交互式构建查询（无 key 时自动进入）')
+  .option('--describe', '先打印字段图例到 stderr（裸输出列→中文名/口径/单位+生效时间口径），再返回数据')
   .action(async (key, options, cmd) => {
     const wizardOpts = {
       format: options.format,
@@ -113,7 +114,7 @@ program
       return interactiveQueryCommand(wizardOpts);
     }
     const extras = parseExtraParams(cmd.args.slice(1));
-    return queryCommand(key, { ...wizardOpts, params: extras });
+    return queryCommand(key, { ...wizardOpts, params: extras, describe: Boolean(options.describe) });
   })
   .addHelpText('after', `
 示例:
@@ -123,6 +124,7 @@ program
   $ cx query claims-detail-heatmap --dateStart=2026-01-01
   $ cx query /patrol/renewal                    （path 直通）
   $ cx query PATROL --domain=renewal            （path 模板参数）
+  $ cx query RENEWAL_TRACKER --describe --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18   （先看 A-E 字段图例）
   $ cx query TREND --limit=10 --format=csv`);
 
 program
