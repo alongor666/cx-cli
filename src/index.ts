@@ -21,6 +21,7 @@ import { queryCommand, parseExtraParams } from './commands/query.js';
 import { fieldsCommand } from './commands/fields.js';
 import { metricsCommand } from './commands/metrics.js';
 import { describeCommand } from './commands/describe.js';
+import { cubeCommand } from './commands/cube.js';
 import { presetsCommand } from './commands/presets.js';
 import { sqlCommand } from './commands/sql.js';
 import { filtersCommand } from './commands/filters.js';
@@ -173,6 +174,39 @@ program
   .action((relation, options) => {
     describeCommand(relation, { format: options.format });
   });
+
+program
+  .command('cube')
+  .description('语义层「选指标 × 任意维度子集」可组合查询。续保族需 --start/--end/--cutoff；PolicyFact 指标走标准筛选器。额外 --<筛选>=值 透传。')
+  .allowUnknownOption(true)
+  .allowExcessArguments(true)
+  .requiredOption('--metric <id>', '单个指标 id（续保 renewal_*_count / PolicyFact 可加/比率指标）')
+  .option('--dims <d1,d2,...>', '逗号分隔维度子集（续保 0-4 维 / PolicyFact 1-2 维）')
+  .option('--start <date>', '续保路径：到期窗口起 YYYY-MM-DD')
+  .option('--end <date>', '续保路径：到期窗口止 YYYY-MM-DD')
+  .option('--cutoff <date>', '续保路径：观察截止日 YYYY-MM-DD')
+  .option('-l, --limit <n>', '返回行数，默认 100，上限 500')
+  .option('-f, --format <fmt>', '输出格式 table|json|csv（非终端默认 json）')
+  .option('--timeout <ms>', '请求超时毫秒数')
+  .action((options, cmd) => {
+    const extras = parseExtraParams(cmd.args);
+    return cubeCommand({
+      metric: options.metric,
+      dims: options.dims,
+      start: options.start,
+      end: options.end,
+      cutoff: options.cutoff,
+      limit: options.limit ? Number(options.limit) : undefined,
+      format: options.format,
+      timeoutMs: options.timeout ? Number(options.timeout) : undefined,
+      params: extras,
+    });
+  })
+  .addHelpText('after', `
+示例:
+  $ cx cube --metric=renewal_renewed_count --dims=org_level_3,is_new_car --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18
+  $ cx cube --metric=renewal_due_count --dims=org_level_3 --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18 --orgNames=天府
+  $ cx cube --metric=total_premium --dims=org_level_3,customer_category   （PolicyFact 可加/比率指标走 pivot，1-2 维）`);
 
 program
   .command('presets')
