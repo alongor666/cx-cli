@@ -42,7 +42,6 @@ PAT 在 Web 端「设置 → 访问令牌」生成。配置存 `~/.chexian/confi
 cx query KPI --year=2026                  # 1) catalog key（大小写/中划线宽容：kpi、claims-detail-heatmap 均可）
 cx query /kpi --year=2026                 # 2) catalog 登记的 path
 cx query /repair/overview                 # 3) 任意 / 开头 path 直通（不依赖 catalog，服务端仍鉴权）
-cx query PATROL --domain=renewal          # 带 path 参数的路由（:domain 自动填充）
 ```
 
 常用选项：`--format table|json|csv`（非终端默认 json）· `--limit n`（客户端截断）· `--timeout ms`。

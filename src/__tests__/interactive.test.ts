@@ -23,12 +23,12 @@ const ROUTES: RouteMeta[] = [
     ],
   },
   {
-    key: 'PATROL',
-    path: '/patrol/:domain',
-    fullPath: '/api/query/patrol/:domain',
+    key: 'EXAMPLE',
+    path: '/example/:domain',
+    fullPath: '/api/query/example/:domain',
     summary: '盯盘',
     description: '',
-    tags: ['patrol'],
+    tags: ['example'],
     parameters: [
       { name: 'domain', type: 'string', required: true, description: '盯盘域', enum: ['renewal', 'incidents'] },
     ],
@@ -38,7 +38,7 @@ const ROUTES: RouteMeta[] = [
 describe('pickRouteFromInput', () => {
   it('序号 → 命中', () => {
     expect(pickRouteFromInput('1', ROUTES)?.key).toBe('KPI');
-    expect(pickRouteFromInput('2', ROUTES)?.key).toBe('PATROL');
+    expect(pickRouteFromInput('2', ROUTES)?.key).toBe('EXAMPLE');
   });
 
   it('序号越界 → null', () => {
@@ -47,7 +47,7 @@ describe('pickRouteFromInput', () => {
 
   it('key 大小写宽容 + 中划线', () => {
     expect(pickRouteFromInput('kpi', ROUTES)?.key).toBe('KPI');
-    expect(pickRouteFromInput('Patrol', ROUTES)?.key).toBe('PATROL');
+    expect(pickRouteFromInput('Example', ROUTES)?.key).toBe('EXAMPLE');
   });
 
   it('catalog path 命中', () => {
@@ -102,7 +102,7 @@ describe('isInteractiveUnsupported（TTY guard 只查 stdin）', () => {
 describe('previewUrl', () => {
   it('替换 :var + 拼 query string', () => {
     const url = previewUrl(ROUTES[1], { domain: 'renewal', org: '高新' });
-    expect(url).toBe('/api/query/patrol/renewal?org=' + encodeURIComponent('高新'));
+    expect(url).toBe('/api/query/example/renewal?org=' + encodeURIComponent('高新'));
   });
 
   it('缺 path 参数显示 incomplete 而非抛错', () => {
@@ -170,8 +170,8 @@ describe('interactiveQueryCommand 集成', () => {
 
   it('path :var 路由：domain 通过 wizard 收集且命中 invokeQuery', async () => {
     const io = makeFakeIO([
-      'patrol',    // 搜索
-      '1',         // 选 PATROL（搜索后唯一候选）
+      'example',    // 搜索
+      '1',         // 选 EXAMPLE（搜索后唯一候选）
       'renewal',   // domain（必填 path）
       'y',         // 确认
     ]);
@@ -182,7 +182,7 @@ describe('interactiveQueryCommand 集成', () => {
       { io, fetchRoutes: async () => ROUTES, invokeQuery },
     );
 
-    expect(invokeQuery).toHaveBeenCalledWith('PATROL', expect.objectContaining({
+    expect(invokeQuery).toHaveBeenCalledWith('EXAMPLE', expect.objectContaining({
       params: { domain: 'renewal' },
     }));
   });
@@ -234,8 +234,8 @@ describe('interactiveQueryCommand 集成', () => {
 
   it('path :var 必填且空回车 → retry 直到给值', async () => {
     const io = makeFakeIO([
-      'patrol', // 搜索
-      '1',      // 选 PATROL
+      'example', // 搜索
+      '1',      // 选 EXAMPLE
       '',       // domain 空回车（被拒）
       'renewal', // 给值
       'y',      // 确认
@@ -247,7 +247,7 @@ describe('interactiveQueryCommand 集成', () => {
       { io, fetchRoutes: async () => ROUTES, invokeQuery },
     );
 
-    expect(invokeQuery).toHaveBeenCalledWith('PATROL', expect.objectContaining({
+    expect(invokeQuery).toHaveBeenCalledWith('EXAMPLE', expect.objectContaining({
       params: { domain: 'renewal' },
     }));
     const domainPrompts = io.state.questions.filter((q) => q.includes('domain='));

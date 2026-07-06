@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-06-19T23:42:48.177Z",
+  "measured_at": "2026-07-06T14:38:54.920Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -74,7 +74,7 @@
           ],
           "doc": "query 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx query [options] [key|path]\n\n调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺 key 或 -i 进入交互式构建器\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv（非终端默认 json）\n  -l, --limit <n>     客户端截断行数（仅列表型响应）\n  --timeout <ms>      请求超时毫秒数\n  -i, --interactive   交互式构建查询（无 key 时自动进入）\n  --describe          先打印字段图例到 stderr（裸输出列→中文名/口径/单位+生效时间口径），再返回数据\n  -h, --help          display help for command\n\n示例:\n  $ cx query                                  （无 key → 交互式 wizard）\n  $ cx query -i                               （强制 wizard）\n  $ cx query KPI --year=2026 --org_level_3=分公司A\n  $ cx query claims-detail-heatmap --dateStart=2026-01-01\n  $ cx query /patrol/renewal                    （path 直通）\n  $ cx query PATROL --domain=renewal            （path 模板参数）\n  $ cx query RENEWAL_TRACKER --describe --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18   （先看 A-E 字段图例）\n  $ cx query TREND --limit=10 --format=csv",
+          "stdout": "Usage: cx query [options] [key|path]\n\n调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺 key 或 -i 进入交互式构建器\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv（非终端默认 json）\n  -l, --limit <n>     客户端截断行数（仅列表型响应）\n  --timeout <ms>      请求超时毫秒数\n  -i, --interactive   交互式构建查询（无 key 时自动进入）\n  --describe          先打印字段图例到 stderr（裸输出列→中文名/口径/单位+生效时间口径），再返回数据\n  -h, --help          display help for command\n\n示例:\n  $ cx query                                  （无 key → 交互式 wizard）\n  $ cx query -i                               （强制 wizard）\n  $ cx query KPI --year=2026 --org_level_3=分公司A\n  $ cx query claims-detail-heatmap --dateStart=2026-01-01\n  $ cx query /renewal-tracker                   （path 直通）\n  $ cx query RENEWAL_TRACKER --describe --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18   （先看 A-E 字段图例）\n  $ cx query TREND --limit=10 --format=csv",
           "stderr": ""
         },
         "help-sql": {

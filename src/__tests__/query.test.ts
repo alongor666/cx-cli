@@ -89,16 +89,16 @@ describe('resolveWithRefresh（缓存未命中自动刷新）', () => {
 
 describe('applyPathParams (cli)', () => {
   it(':domain 替换且从参数移除', () => {
-    const { resolvedPath, restArgs } = applyPathParams('/api/query/patrol/:domain', {
+    const { resolvedPath, restArgs } = applyPathParams('/api/query/example/:domain', {
       domain: 'renewal',
       year: '2026',
     });
-    expect(resolvedPath).toBe('/api/query/patrol/renewal');
+    expect(resolvedPath).toBe('/api/query/example/renewal');
     expect(restArgs).toEqual({ year: '2026' });
   });
 
   it('缺少 path 参数时抛错', () => {
-    expect(() => applyPathParams('/api/query/patrol/:domain', {})).toThrow(/domain/);
+    expect(() => applyPathParams('/api/query/example/:domain', {})).toThrow(/domain/);
   });
 });
 

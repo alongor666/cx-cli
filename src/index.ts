@@ -123,8 +123,7 @@ program
   $ cx query -i                               （强制 wizard）
   $ cx query KPI --year=2026 --org_level_3=分公司A
   $ cx query claims-detail-heatmap --dateStart=2026-01-01
-  $ cx query /patrol/renewal                    （path 直通）
-  $ cx query PATROL --domain=renewal            （path 模板参数）
+  $ cx query /renewal-tracker                   （path 直通）
   $ cx query RENEWAL_TRACKER --describe --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18   （先看 A-E 字段图例）
   $ cx query TREND --limit=10 --format=csv`);
 

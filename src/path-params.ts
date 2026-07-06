@@ -1,5 +1,5 @@
 /**
- * path 模板参数替换：/api/query/patrol/:domain + {domain:'renewal'} → /api/query/patrol/renewal
+ * path 模板参数替换：/api/query/example/:domain + {domain:'renewal'} → /api/query/example/renewal
  *
  * 已消费的参数从 query 参数中移除，避免重复出现在 query string。
  * 缺少必需 path 参数时抛错。
