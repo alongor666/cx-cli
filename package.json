@@ -24,13 +24,13 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "kleur": "^4.1.5",
-    "undici": "^6.21.0"
+    "undici": "^6.27.0"
   },
   "devDependencies": {
-    "@types/node": "^20.11.5",
-    "tsx": "^4.7.0",
+    "@types/node": "^20.19.43",
+    "tsx": "^4.23.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.7"
   },
   "files": ["dist", "README.md"]
 }
