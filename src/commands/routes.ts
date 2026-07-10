@@ -19,7 +19,7 @@ export interface RouteMeta {
   description: string;
   tags: string[];
   parameters: Array<{ name: string; type: string; required?: boolean; description: string; enum?: string[] }>;
-  /** 时间窗口语义（window/rolling/policy-year/ytd-progress/cohort-development/snapshot/any；旧缓存可能缺省） */
+  /** 时间窗口语义（枚举以服务端 RouteTimeWindow 为准，如 window/rolling/ytd-progress 等；旧缓存可能缺省） */
   timeWindow?: string;
   /** 时间口径补充说明 */
   timeWindowNote?: string;

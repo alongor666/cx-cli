@@ -16,7 +16,7 @@ import { cxGet, CxApiError } from '../api.js';
 import { applyPathParams } from '../path-params.js';
 import { resolveWithRefresh, resolveTarget } from './query.js';
 import { fetchCatalog, type RouteMeta } from './routes.js';
-import { failWith } from '../exit-codes.js';
+import { failWith, EXIT } from '../exit-codes.js';
 
 interface BatchOpts {
   concurrency: number;
@@ -171,12 +171,12 @@ export async function batchCommand(opts: BatchOpts): Promise<void> {
       console.error('cx batch: 期望从 stdin 读 JSONL（每行 {route, params?}），交互模式无 stdin。');
       console.error('示例: echo \'{"route":"KPI","params":{"year":2026}}\' | cx batch --summary');
       console.error('      echo \'{"route":"/health"}\' | cx batch          # 顶层直通');
-      process.exit(4);
+      process.exit(EXIT.USAGE);
     }
     const inputs = await readStdinLines();
     if (inputs.length === 0) {
       console.error('cx batch: stdin 为空，无任务');
-      process.exit(4);
+      process.exit(EXIT.USAGE);
     }
 
     // 预热 catalog 一次，所有 worker 共用，避免每 worker 重复 fetch

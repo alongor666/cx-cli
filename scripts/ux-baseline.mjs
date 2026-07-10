@@ -20,12 +20,16 @@
  *   node cli/scripts/ux-baseline.mjs --json      # 机器可读输出当前测量
  *
  * 确定性：固定 NO_COLOR=1 + 隔离空 HOME（无 PAT → 鉴权路径恒定 exit 2）+ 剥离 tsx dev 噪声。
- * 优先用 dist/cx 编译产物（=生产用户真正所见，无 DEP 噪声），缺失则回退 tsx。
+ * 优先用 dist/cx 编译产物（=生产用户真正所见，无 DEP 噪声），缺失则回退 tsx；
+ * env CX_UX_RUNNER=tsx|bin 可强制 runner（非法值直接报错退出，fail-closed）。
+ * runner 约束 fail-closed：--check 时基线 runner 与当前 runner 不一致 → 直接失败
+ * （跨 runner 的快照对比无效；基线与 CI 同 runner=tsx，本地重建基线务必带 CX_UX_RUNNER=tsx）。
+ * 子命令清单运行时从 `cx --help` 发现（SSOT=commander 注册），新命令自动纳入快照与 lint。
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
@@ -47,35 +51,48 @@ const flags = {
   n: Number(args.find((a) => a.startsWith('--n='))?.slice('--n='.length) ?? 5),
 };
 
-/** 全部子命令（help 元命令不计） */
-const COMMANDS = [
-  'login', 'logout', 'whoami', 'routes', 'query', 'sql', 'fields',
-  'metrics', 'presets', 'filters', 'data', 'health', 'batch', 'config', 'completion',
-];
+/**
+ * 子命令清单**运行时发现**：跑 `cx --help` 解析 Commands 区（help 元命令不计）。
+ * SSOT = index.ts 的 commander 注册；本 harness 不手抄清单
+ * （历史教训：手抄清单曾漏 describe/cube 两个新命令 → help 快照与一致性 lint 长期漏保护）。
+ */
+export function parseCommandsFromHelp(rootHelpStdout) {
+  const block = rootHelpStdout.split(/Commands:/)[1] || '';
+  const cmds = [];
+  for (const line of block.split('\n')) {
+    const m = line.match(/^ {2}([a-z][\w-]*)/);
+    if (m && m[1] !== 'help') cmds.push(m[1]);
+  }
+  return cmds;
+}
 
 /**
  * 离线确定性快照清单：帮助（全命令） + 报错/离线行为面。
  * 每条都不依赖网络 / PAT，固定环境下字节级稳定。
  */
-const SNAPSHOTS = [
-  { id: 'help-root', argv: ['--help'], doc: '根帮助' },
-  ...COMMANDS.map((c) => ({ id: `help-${c}`, argv: [c, '--help'], doc: `${c} 帮助` })),
-  { id: 'err-whoami-nopat', argv: ['whoami'], doc: '无 PAT whoami（应 exit 2 + 可操作提示）' },
-  { id: 'err-query-nopat', argv: ['query', 'KPI', '--year=2026'], doc: '无 PAT query（应 exit 2）' },
-  { id: 'err-sql-nopat', argv: ['sql', 'SELECT 1'], doc: '无 PAT sql（应 exit 2）' },
-  { id: 'err-completion-noarg', argv: ['completion'], doc: 'completion 缺参数（用法错误）' },
-  { id: 'err-data-nosub', argv: ['data'], doc: 'data 缺子命令（用法错误）' },
-  { id: 'err-unknown-cmd', argv: ['foobar'], doc: '未知命令（用法错误）' },
-  { id: 'ok-config-get', argv: ['config', 'get', 'baseUrl'], doc: 'config get（离线 exit 0）' },
-];
+function buildSnapshotList(commands) {
+  return [
+    ...commands.map((c) => ({ id: `help-${c}`, argv: [c, '--help'], doc: `${c} 帮助` })),
+    { id: 'err-whoami-nopat', argv: ['whoami'], doc: '无 PAT whoami（应 exit 2 + 可操作提示）' },
+    { id: 'err-query-nopat', argv: ['query', 'KPI', '--year=2026'], doc: '无 PAT query（应 exit 2）' },
+    { id: 'err-sql-nopat', argv: ['sql', 'SELECT 1'], doc: '无 PAT sql（应 exit 2）' },
+    { id: 'err-completion-noarg', argv: ['completion'], doc: 'completion 缺参数（用法错误）' },
+    { id: 'err-data-nosub', argv: ['data'], doc: 'data 缺子命令（用法错误）' },
+    { id: 'err-unknown-cmd', argv: ['foobar'], doc: '未知命令（用法错误）' },
+    { id: 'err-login-badformat', argv: ['login', '--token', 'bad'], doc: 'login token 格式错误（用法错误，离线）' },
+    { id: 'ok-config-get', argv: ['config', 'get', 'baseUrl'], doc: 'config get（离线 exit 0）' },
+    { id: 'ok-completion-bash', argv: ['completion', 'bash'], doc: 'completion bash 脚本（离线 exit 0，R6 用）' },
+  ];
+}
 
 /** 一致性 lint 规则文档（人类可读，写入基线供追溯） */
 const CONSISTENCY_RULES = {
   R1_help_listed: '每个子命令出现在根帮助 Commands 区',
   R2_help_exit0: '每个子命令 <cmd> --help 退出码为 0',
   R3_auth_exit2: '无 PAT 的鉴权失败统一 exit 2（鉴权失败契约）',
-  R4_usage_exit4: '用法错误（缺参数 / 缺子命令 / 未知命令）统一 exit 4（用法错误契约）',
+  R4_usage_exit4: '用法错误（缺参数 / 缺子命令 / 未知命令 / token 格式错误）统一 exit 4（用法错误契约）',
   R5_error_prefix: '错误信息统一以 "✘ " 前缀打到 stderr（failWith 出口）',
+  R6_completion_covers_commands: 'completion 脚本覆盖全部子命令（防补全清单与命令注册漂移）',
 };
 
 /** 剥离非确定性噪声：tsx 的 DEP 警告、node:pid 前缀、experimental 提示 */
@@ -91,12 +108,47 @@ function normalize(s) {
     .replace(/\s+$/g, '');
 }
 
+/**
+ * runner 解析（纯函数，导出供单测）：默认有编译产物用 compiled-bin、否则 tsx；
+ * forced（env CX_UX_RUNNER）只接受 tsx|bin，**非法值抛错而非静默回退**（fail-closed：
+ * 静默回退会让"以为在强制 tsx"的调用实际跑了 dist/cx，重新引入 runner 漂移）。
+ */
+export function resolveRunner(forced, binExists) {
+  if (forced === 'tsx') return 'tsx';
+  if (forced === 'bin') {
+    if (!binExists) throw new Error(`CX_UX_RUNNER=bin 但编译产物不存在: ${BIN_PATH}（先 bun run build:bin）`);
+    return 'compiled-bin';
+  }
+  if (forced !== undefined && forced !== '') {
+    throw new Error(`CX_UX_RUNNER 仅支持 tsx 或 bin，收到: ${JSON.stringify(forced)}`);
+  }
+  return binExists ? 'compiled-bin' : 'tsx';
+}
+
+/**
+ * runner 一致性判定（纯函数，导出供单测）：--check 时基线与当前 runner 不一致
+ * 必须失败——tsx 与编译产物的帮助渲染可能不同，跨 runner 的快照对比无效，
+ * "提示后照过"等于允许基线在错误 runner 下被验证通过。返回 null=一致，否则错误说明。
+ */
+export function checkRunnerConsistency(baselineRunner, currentRunner) {
+  if (!baselineRunner || baselineRunner === currentRunner) return null;
+  return `基线 runner=${baselineRunner} 当前=${currentRunner} — 跨 runner 快照对比无效；`
+    + `用 CX_UX_RUNNER=${baselineRunner === 'compiled-bin' ? 'bin' : baselineRunner} 对齐后重跑，`
+    + `或有意切换 runner 则 --write 重建基线`;
+}
+
+/** 基线与 CI（cli-ux-sentinel，tsx）必须同 runner，本地重建基线用 CX_UX_RUNNER=tsx 免受残留 dist/cx 干扰 */
 function runnerKind() {
-  return existsSync(BIN_PATH) ? 'compiled-bin' : 'tsx';
+  try {
+    return resolveRunner(process.env.CX_UX_RUNNER, existsSync(BIN_PATH));
+  } catch (err) {
+    console.error(`✘ ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
 }
 
 function runCx(argv) {
-  const useBin = existsSync(BIN_PATH);
+  const useBin = runnerKind() === 'compiled-bin';
   const cmd = useBin ? BIN_PATH : 'bunx';
   const cmdArgs = useBin ? argv : ['tsx', ENTRY, ...argv];
   const res = spawnSync(cmd, cmdArgs, {
@@ -118,34 +170,39 @@ function runCx(argv) {
   };
 }
 
-/** 采集全部快照 */
+/** 采集全部快照：先跑根帮助发现子命令，再按发现的清单展开 */
 function capture() {
   // 隔离空 HOME：确保无 ~/.chexian/config.json → 鉴权路径恒定
   rmSync(ISOLATED_HOME, { recursive: true, force: true });
   mkdirSync(ISOLATED_HOME, { recursive: true });
-  const snapshots = {};
-  for (const s of SNAPSHOTS) {
+  const root = runCx(['--help']);
+  const commands = parseCommandsFromHelp(root.stdout);
+  const snapshots = {
+    'help-root': { argv: ['--help'], doc: '根帮助', exitCode: root.exitCode, stdout: root.stdout, stderr: root.stderr },
+  };
+  for (const s of buildSnapshotList(commands)) {
     const r = runCx(s.argv);
     snapshots[s.id] = { argv: s.argv, doc: s.doc, exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
   }
   rmSync(ISOLATED_HOME, { recursive: true, force: true });
-  return snapshots;
+  return { snapshots, commands };
 }
 
 /** 基于快照跑一致性 lint，返回 violations 列表 */
-function lint(snapshots) {
+function lint(snapshots, commands) {
   const violations = [];
   const add = (rule, id, detail) => violations.push({ key: `${rule}:${id}`, rule, id, detail });
 
-  // R1: 子命令在根帮助 Commands 区可达
+  // R1: 子命令在根帮助 Commands 区可达（commands 本身来自根帮助，此规则守护解析器与帮助结构自洽）
   const rootHelp = snapshots['help-root']?.stdout || '';
   const commandsBlock = rootHelp.split(/Commands:/)[1] || '';
-  for (const c of COMMANDS) {
+  for (const c of commands) {
     if (!new RegExp(`(^|\\n)\\s+${c}\\b`).test(commandsBlock)) add('R1_help_listed', c, `根帮助未列出命令 ${c}`);
   }
+  if (commands.length === 0) add('R1_help_listed', '_discovery', '根帮助 Commands 区解析出 0 个子命令（发现机制失效）');
 
   // R2: 每命令 --help exit 0
-  for (const c of COMMANDS) {
+  for (const c of commands) {
     const snap = snapshots[`help-${c}`];
     if (snap && snap.exitCode !== 0) add('R2_help_exit0', c, `${c} --help 退出码 ${snap.exitCode}≠0`);
   }
@@ -157,18 +214,28 @@ function lint(snapshots) {
   }
 
   // R4: 用法错误 → exit 4
-  for (const id of ['err-completion-noarg', 'err-data-nosub', 'err-unknown-cmd']) {
+  for (const id of ['err-completion-noarg', 'err-data-nosub', 'err-unknown-cmd', 'err-login-badformat']) {
     const snap = snapshots[id];
     if (snap && snap.exitCode !== 4) add('R4_usage_exit4', id, `${id} 退出码 ${snap.exitCode}≠4（用法错误应为 4）`);
   }
 
   // R5: 错误信息以 "✘ " 前缀打到 stderr
   for (const id of ['err-whoami-nopat', 'err-query-nopat', 'err-sql-nopat',
-    'err-completion-noarg', 'err-data-nosub', 'err-unknown-cmd']) {
+    'err-completion-noarg', 'err-data-nosub', 'err-unknown-cmd', 'err-login-badformat']) {
     const snap = snapshots[id];
     if (snap && snap.exitCode !== 0 && !snap.stderr.startsWith('✘')) {
       add('R5_error_prefix', id, `${id} stderr 未用 "✘ " 前缀: ${JSON.stringify(snap.stderr.slice(0, 50))}`);
     }
+  }
+
+  // R6: completion 脚本覆盖全部子命令（补全清单由 commander 注册派生，此规则防回归手抄）
+  const comp = snapshots['ok-completion-bash'];
+  if (comp && comp.exitCode === 0) {
+    for (const c of commands) {
+      if (!comp.stdout.includes(c)) add('R6_completion_covers_commands', c, `completion bash 脚本缺命令 ${c}`);
+    }
+  } else if (comp) {
+    add('R6_completion_covers_commands', '_exit', `completion bash 退出码 ${comp.exitCode}≠0`);
   }
 
   return violations;
@@ -215,7 +282,7 @@ function stats(samples) {
 
 /** 用真实 HOME（含 PAT）跑 live 命令并计时 */
 function runCxLive(argv) {
-  const useBin = existsSync(BIN_PATH);
+  const useBin = runnerKind() === 'compiled-bin';
   const cmd = useBin ? BIN_PATH : 'bunx';
   const cmdArgs = useBin ? argv : ['tsx', ENTRY, ...argv];
   const t0 = performance.now();
@@ -256,8 +323,8 @@ function measureJourney(n) {
 }
 
 function measure() {
-  const snapshots = capture();
-  const violations = lint(snapshots);
+  const { snapshots, commands } = capture();
+  const violations = lint(snapshots, commands);
   const journey = flags.journey
     ? measureJourney(flags.n)
     : { _status: 'pending', _note: '加 --journey 触发 live 测量（需 PAT + server）' };
@@ -313,7 +380,20 @@ function printReport(m) {
   }
 }
 
-// ---- 主流程 ----
+// ---- 主流程（仅作为 CLI 入口执行时运行；被测试 import 时不产生副作用） ----
+// 守卫必须走 realpathSync + pathToFileURL：中文路径下裸比较 import.meta.url 与
+// `file://${argv[1]}` 会因百分号编码不一致而静默不执行（见 memory chinese-path-import-meta-url-cli-guard）
+function isCliEntry() {
+  try {
+    if (!process.argv[1]) return false;
+    return pathToFileURL(realpathSync(process.argv[1])).href
+      === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch {
+    return false;
+  }
+}
+
+function main() {
 if (flags.write) {
   const m = measure();
   const baseline = buildBaseline(m);
@@ -333,9 +413,11 @@ if (flags.check) {
   const m = measure();
   let failed = false;
 
-  // 0) runner 一致性：tsx↔编译产物切换可能改变帮助渲染，快照对比前先提示
-  if (baseline.runner && baseline.runner !== m.runner) {
-    console.log(`ℹ️  [runner] 基线 runner=${baseline.runner} 当前=${m.runner} — 渲染差异会在快照对比中暴露；如有意切换请 --write 重建基线`);
+  // 0) runner 一致性（fail-closed）：跨 runner 快照对比无效，不一致即失败而非提示
+  const runnerErr = checkRunnerConsistency(baseline.runner, m.runner);
+  if (runnerErr) {
+    console.error(`✘ [runner] ${runnerErr}`);
+    failed = true;
   }
 
   // 1) 渲染快照漂移
@@ -384,3 +466,6 @@ const m = measure();
 if (flags.json) console.log(JSON.stringify(m, null, 2));
 else printReport(m);
 process.exit(0);
+}
+
+if (isCliEntry()) main();

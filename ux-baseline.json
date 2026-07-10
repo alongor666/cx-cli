@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-07-06T14:38:54.920Z",
+  "measured_at": "2026-07-09T16:19:50.288Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -10,8 +10,9 @@
         "R1_help_listed": "每个子命令出现在根帮助 Commands 区",
         "R2_help_exit0": "每个子命令 <cmd> --help 退出码为 0",
         "R3_auth_exit2": "无 PAT 的鉴权失败统一 exit 2（鉴权失败契约）",
-        "R4_usage_exit4": "用法错误（缺参数 / 缺子命令 / 未知命令）统一 exit 4（用法错误契约）",
-        "R5_error_prefix": "错误信息统一以 \"✘ \" 前缀打到 stderr（failWith 出口）"
+        "R4_usage_exit4": "用法错误（缺参数 / 缺子命令 / 未知命令 / token 格式错误）统一 exit 4（用法错误契约）",
+        "R5_error_prefix": "错误信息统一以 \"✘ \" 前缀打到 stderr（failWith 出口）",
+        "R6_completion_covers_commands": "completion 脚本覆盖全部子命令（防补全清单与命令注册漂移）"
       },
       "known_violations": []
     },
@@ -105,6 +106,26 @@
           "doc": "metrics 帮助",
           "exitCode": 0,
           "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-describe": {
+          "argv": [
+            "describe",
+            "--help"
+          ],
+          "doc": "describe 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx describe [options] <relation>\n\n自省视图 schema（列名/类型）。relation 须在联邦白名单内（PolicyFact / RenewalTrackerFact 等派生视图）。\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-cube": {
+          "argv": [
+            "cube",
+            "--help"
+          ],
+          "doc": "cube 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx cube [options]\n\n语义层「选指标 × 任意维度子集」可组合查询。续保族需 --start/--end/--cutoff；PolicyFact 指标走标准筛选器。额外\n--<筛选>=值 透传。\n\nOptions:\n  --metric <id>       单个指标 id（续保 renewal_*_count / PolicyFact 可加/比率指标）\n  --dims <d1,d2,...>  逗号分隔维度子集（续保 0-4 维 / PolicyFact 1-2 维）\n  --start <date>      续保路径：到期窗口起 YYYY-MM-DD\n  --end <date>        续保路径：到期窗口止 YYYY-MM-DD\n  --cutoff <date>     续保路径：观察截止日 YYYY-MM-DD\n  -l, --limit <n>     返回行数，默认 100，上限 500\n  -f, --format <fmt>  输出格式 table|json|csv（非终端默认 json）\n  --timeout <ms>      请求超时毫秒数\n  -h, --help          display help for command\n\n示例:\n  $ cx cube --metric=renewal_renewed_count --dims=org_level_3,is_new_car --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18\n  $ cx cube --metric=renewal_due_count --dims=org_level_3 --start=2026-06-01 --end=2026-06-30 --cutoff=2026-06-18 --orgNames=天府\n  $ cx cube --metric=total_premium --dims=org_level_3,customer_category   （PolicyFact 可加/比率指标走 pivot，1-2 维）",
           "stderr": ""
         },
         "help-presets": {
@@ -234,6 +255,17 @@
           "stdout": "",
           "stderr": "✘ unknown command 'foobar'\n  运行 cx --help 或 cx <命令> --help 查看用法"
         },
+        "err-login-badformat": {
+          "argv": [
+            "login",
+            "--token",
+            "bad"
+          ],
+          "doc": "login token 格式错误（用法错误，离线）",
+          "exitCode": 4,
+          "stdout": "",
+          "stderr": "✘ Invalid token format. Expected cx_pat_xxx.yyy\n  在 Web 端「设置 → 访问令牌」生成 PAT 后重新运行 cx login"
+        },
         "ok-config-get": {
           "argv": [
             "config",
@@ -244,6 +276,16 @@
           "exitCode": 0,
           "stdout": "https://chexian.cretvalu.com",
           "stderr": ""
+        },
+        "ok-completion-bash": {
+          "argv": [
+            "completion",
+            "bash"
+          ],
+          "doc": "completion bash 脚本（离线 exit 0，R6 用）",
+          "exitCode": 0,
+          "stdout": "# cx bash completion\n_cx_completions() {\n  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n  if [ \"$COMP_CWORD\" -eq 1 ]; then\n    COMPREPLY=( $(compgen -W \"login logout whoami routes query sql fields metrics describe cube presets filters data health batch config completion help\" -- \"$cur\") )\n  else\n    COMPREPLY=( $(compgen -W \"--version --no-color --quiet --verbose --help\" -- \"$cur\") )\n  fi\n}\ncomplete -F _cx_completions cx",
+          "stderr": "# 安装: cx completion bash >> ~/.bashrc && source ~/.bashrc"
         }
       }
     },
@@ -253,7 +295,7 @@
     },
     "discoverability": {
       "_doc": "报错可操作率 = 给出下一步的报错 / 全部报错。目标 1.0，棘轮：不可下降。",
-      "errors_total": 6,
+      "errors_total": 7,
       "errors_actionable_ratio": 1,
       "target": 1,
       "non_actionable": []

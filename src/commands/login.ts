@@ -8,6 +8,7 @@ import readline from 'readline';
 import { Writable } from 'stream';
 import { loadConfig, saveConfig } from '../config.js';
 import { cxGet, CxApiError } from '../api.js';
+import { EXIT, exitCodeForError } from '../exit-codes.js';
 
 export async function loginCommand(opts: { token?: string; baseUrl?: string }): Promise<void> {
   const cfg = loadConfig();
@@ -19,7 +20,8 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
   }
   if (!token.startsWith('cx_pat_')) {
     console.error(kleur.red('✘ Invalid token format. Expected cx_pat_xxx.yyy'));
-    process.exit(1);
+    console.error(kleur.gray('  在 Web 端「设置 → 访问令牌」生成 PAT 后重新运行 cx login'));
+    process.exit(EXIT.USAGE);
   }
 
   cfg.token = token;
@@ -42,7 +44,8 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
     } else {
       console.error(kleur.red(`✘ Login failed: ${(err as Error).message}`));
     }
-    process.exit(1);
+    // 退出码契约：401 → 2（鉴权失败）；网络/其它 → 1（通用错误）
+    process.exit(exitCodeForError(err));
   }
 }
 

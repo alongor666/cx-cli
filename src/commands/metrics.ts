@@ -1,7 +1,7 @@
 /**
  * cx metrics [--category <cat>] [-f json|table|csv]
  *
- * 列出指标注册表（25 个），可按 category 过滤。
+ * 列出指标注册表（数量与分类以服务端 metric-registry 为准），可按 category 过滤。
  * 不返回 SQL 表达式 — Agent 必须走 PIVOT/SQL 路由调用。
  */
 import kleur from 'kleur';

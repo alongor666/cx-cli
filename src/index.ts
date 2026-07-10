@@ -290,10 +290,21 @@ configCmd.addHelpText('after', `
   $ cx config set baseUrl http://localhost:3000    切到本地后端
   $ cx config unset baseUrl                        恢复生产默认`);
 
+/** 补全清单从 commander 注册运行时派生（SSOT=命令注册），杜绝手抄清单漏新命令 */
+function completionTargets(root: Command): { commands: string[]; globalOptions: string[] } {
+  return {
+    commands: [...root.commands.map((c) => c.name()), 'help'],
+    globalOptions: [
+      ...root.options.map((o) => o.long).filter((f): f is string => Boolean(f)),
+      '--help',
+    ],
+  };
+}
+
 program
   .command('completion <shell>')
   .description('输出 shell 补全脚本（bash | zsh）')
-  .action(completionCommand);
+  .action((shell: string) => completionCommand(shell, completionTargets(program)));
 
 // 退出码契约统一化：commander 内置校验错误（缺参数 / 未知命令 / 未知选项）默认走 "error:" + exit 1，
 // 这绕过了 failWith 出口。递归给所有命令（含 config 嵌套子命令）挂 exitOverride 改为抛错，

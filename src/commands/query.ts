@@ -114,6 +114,7 @@ export function formatLegend(legend: RouteFieldLegend, params: Record<string, st
     ? `${legend.timeWindow} · ${legend.timeWindowNote}`
     : legend.timeWindow;
   lines.push(kleur.gray(`时间口径: ${tw}`));
+  // 常见时间参数名（仅影响"生效参数"提示行的挑选；参数名 SSOT=服务端 route-param-contracts）
   const timeParams = ['start', 'end', 'cutoff', 'startDate', 'endDate', 'dateStart', 'dateEnd']
     .filter((k) => params[k] !== undefined)
     .map((k) => `${k}=${params[k]}`);

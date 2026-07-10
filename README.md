@@ -27,14 +27,17 @@ PAT 在 Web 端「设置 → 访问令牌」生成。配置存 `~/.chexian/confi
 | `cx routes [--tag t] [--search kw] [--refresh]` | 列出全部查询路由（按 tag 分组；24h 本地缓存；含 timeWindow 时间口径列：window 任意窗口 / rolling 近 N 天 / policy-year 保单年度切片 / ytd-progress 年度计划进度 / cohort-development 批次发展 / snapshot 状态快照） |
 | `cx query <key\|path> [--参数=值 ...]` | 调用查询路由（核心命令，见下） |
 | `cx sql "<SELECT...>"` / `cx sql -` | DuckDB SQL 直通（强制聚合 + 行级权限自动注入；`-` 读 stdin） |
-| `cx fields [--groupable]` | 字段注册表 |
+| `cx fields [--groupable]` | 字段注册表（含 PolicyFact 可查真值 column/queryable） |
 | `cx metrics [--category c]` | 指标注册表 |
+| `cx describe <relation>` | 自省视图 schema（列名/类型；联邦白名单内 PolicyFact / 派生视图） |
+| `cx cube --metric=<id> [--dims=d1,d2]` | 语义层「指标 × 任意维度子集」可组合查询（续保族需 --start/--end/--cutoff） |
 | `cx presets` | 筛选器 schema 与车型快捷预设 |
 | `cx filters [--dimension d]` | 各筛选维度的可选值 |
 | `cx data <version\|files\|metadata>` | 数据新鲜度 / 文件清单 / 数据集元数据 |
 | `cx health` | 连通性诊断（服务存活 + 数据版本 + 延迟） |
+| `cx batch [--concurrency n] [--summary]` | stdin 读 JSONL 批量调用（keep-alive 连接复用） |
 | `cx config <get\|set\|unset\|list\|path>` | 本地配置管理（白名单：baseUrl） |
-| `cx completion <bash\|zsh>` | 生成 shell 补全脚本 |
+| `cx completion <bash\|zsh>` | 生成 shell 补全脚本（清单从命令注册运行时派生） |
 
 ## cx query 的三种寻址
 

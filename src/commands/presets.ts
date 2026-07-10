@@ -1,7 +1,7 @@
 /**
  * cx presets [-f json|table|csv]
  *
- * 返回筛选器 schema 和 9 个车型快捷预设。
+ * 返回筛选器 schema 与车型快捷预设（清单以服务端 VEHICLE_QUICK_FILTER_VALUES 为准）。
  */
 import kleur from 'kleur';
 import { cxGet } from '../api.js';
