@@ -160,7 +160,7 @@ program
 program
   .command('metrics')
   .description('列出指标注册表。--category 按分类过滤。')
-  .option('--category <cat>', '指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal）')
+  .option('--category <cat>', '指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal|sales_team）')
   .option('-f, --format <fmt>', '输出格式 table|json|csv')
   .action((options) => {
     metricsCommand({ category: options.category, format: options.format });
