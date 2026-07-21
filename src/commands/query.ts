@@ -11,7 +11,7 @@ import { cxGet } from '../api.js';
 import { renderOutput, type OutputFormat } from '../output.js';
 import { failWith, EXIT } from '../exit-codes.js';
 import { applyPathParams } from '../path-params.js';
-import { note } from '../cli-state.js';
+import { cliState, note } from '../cli-state.js';
 import { fetchCatalog } from './routes.js';
 
 export interface QueryOpts {
@@ -50,6 +50,14 @@ interface RouteTarget {
   fullPath: string;
 }
 
+interface QueryUserScopeResp {
+  success: boolean;
+  data: {
+    branchCode?: string;
+    visibleBranches?: string[];
+  };
+}
+
 export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<void> {
   try {
     const { route, refreshed } = await resolveWithRefresh(rawKey, fetchCatalog);
@@ -59,6 +67,10 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
       process.exit(EXIT.USAGE);
     }
     if (refreshed) note(kleur.gray('(本地缓存未命中，已自动刷新 route-catalog)'));
+
+    // 多省账号若未显式切省，服务端会按默认省返回数据。查询前只读获取当前权限范围，
+    // 在 stderr 明示实际省份；提示失败不阻断主查询，也不改变 stdout 数据契约。
+    await warnImplicitDefaultBranch(opts.params);
 
     // --describe：先把字段图例打到 stderr（口径来自服务端 metric-registry 单一事实源），
     // 再正常返回数据到 stdout（保持管道纯净）。图例失败不阻断数据。
@@ -79,6 +91,50 @@ export async function queryCommand(rawKey: string, opts: QueryOpts): Promise<voi
   } catch (err) {
     failWith(err);
   }
+}
+
+async function warnImplicitDefaultBranch(params: Record<string, string>): Promise<void> {
+  // --quiet 的提示最终不会输出，直接跳过权限请求，避免白耗一次 /api/auth/me 限流额度。
+  if (cliState.quiet) return;
+  try {
+    const me = await cxGet<QueryUserScopeResp>('/api/auth/me');
+    const warning = formatImplicitBranchWarning(me.data, params);
+    if (warning) note(kleur.yellow(warning));
+  } catch {
+    // 提示能力降级不得把原本可成功的数据查询变成失败；主请求仍会独立完成鉴权与报错。
+  }
+}
+
+/** 纯函数：提示多省默认落省，或显式 targetBranch 被服务端静默回落。 */
+export function formatImplicitBranchWarning(
+  scope: QueryUserScopeResp['data'],
+  params: Record<string, string>,
+): string | null {
+  const visibleBranches = Array.isArray(scope.visibleBranches)
+    ? [...new Set(scope.visibleBranches.filter((branch) => typeof branch === 'string' && branch.length > 0))]
+    : [];
+  // 服务端严格按大写代码匹配；这里保留原值比较，避免把 `sx` 误判为已授权后静默回落 SC。
+  const requestedBranch = params.targetBranch?.trim();
+  const defaultBranch = scope.branchCode ?? '(未知)';
+
+  if (requestedBranch) {
+    if (requestedBranch === 'ALL' && visibleBranches.length > 0) return null;
+    if (visibleBranches.includes(requestedBranch)) return null;
+    if (visibleBranches.length === 0 && requestedBranch === scope.branchCode) return null;
+    const scopeText = visibleBranches.length > 0
+      ? `可见省份: ${visibleBranches.join(', ')}`
+      : '当前账号无跨省切换权限';
+    return (
+      `⚠ targetBranch=${requestedBranch} 不在当前可切换范围；服务端将按默认省 ${defaultBranch} 生效。` +
+      `${scopeText}。`
+    );
+  }
+
+  if (visibleBranches.length <= 1) return null;
+  return (
+    `⚠ 多省账号未指定 targetBranch；本次查询按默认省 ${defaultBranch} 生效。` +
+    `可见省份: ${visibleBranches.join(', ')}；切省请传 --targetBranch=<省代码>。`
+  );
 }
 
 /**

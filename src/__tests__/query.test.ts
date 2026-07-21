@@ -1,6 +1,30 @@
-import { describe, it, expect, vi } from 'vitest';
-import { parseExtraParams, resolveTarget, resolveWithRefresh, formatLegend } from '../commands/query.js';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  cxGet: vi.fn(),
+  fetchCatalog: vi.fn(),
+}));
+
+vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
+vi.mock('../commands/routes.js', () => ({ fetchCatalog: mocks.fetchCatalog }));
+
+import {
+  parseExtraParams,
+  resolveTarget,
+  resolveWithRefresh,
+  formatLegend,
+  formatImplicitBranchWarning,
+  queryCommand,
+} from '../commands/query.js';
 import { applyPathParams } from '../path-params.js';
+import { cliState } from '../cli-state.js';
+
+afterEach(() => {
+  cliState.quiet = false;
+  vi.restoreAllMocks();
+  mocks.cxGet.mockReset();
+  mocks.fetchCatalog.mockReset();
+});
 
 describe('parseExtraParams', () => {
   it('解析 --key=value 形式', () => {
@@ -99,6 +123,70 @@ describe('applyPathParams (cli)', () => {
 
   it('缺少 path 参数时抛错', () => {
     expect(() => applyPathParams('/api/query/example/:domain', {})).toThrow(/domain/);
+  });
+});
+
+describe('formatImplicitBranchWarning', () => {
+  const multiBranch = { branchCode: 'SC', visibleBranches: ['SC', 'SX'] };
+
+  it('多省账号未指定 targetBranch → 明示默认省与可见省份', () => {
+    const warning = formatImplicitBranchWarning(multiBranch, {});
+    expect(warning).toContain('默认省 SC');
+    expect(warning).toContain('SC, SX');
+    expect(warning).toContain('--targetBranch=<省代码>');
+  });
+
+  it('显式指定有权省份 → 不提示', () => {
+    expect(formatImplicitBranchWarning(multiBranch, { targetBranch: 'SX' })).toBeNull();
+    expect(formatImplicitBranchWarning(multiBranch, { targetBranch: 'ALL' })).toBeNull();
+  });
+
+  it('显式指定无权省份 → 警告服务端将回落默认省', () => {
+    const warning = formatImplicitBranchWarning(multiBranch, { targetBranch: 'BJ' });
+    expect(warning).toContain('targetBranch=BJ');
+    expect(warning).toContain('默认省 SC');
+    expect(warning).toContain('SC, SX');
+  });
+
+  it('普通账号传入非本人省份 → 警告参数不会生效', () => {
+    const warning = formatImplicitBranchWarning(
+      { branchCode: 'SX', visibleBranches: undefined },
+      { targetBranch: 'BJ' },
+    );
+    expect(warning).toContain('默认省 SX');
+    expect(warning).toContain('无跨省切换权限');
+  });
+
+  it('省代码大小写错误不会被客户端误判为授权', () => {
+    const warning = formatImplicitBranchWarning(multiBranch, { targetBranch: 'sx' });
+    expect(warning).toContain('targetBranch=sx');
+    expect(warning).toContain('默认省 SC');
+  });
+
+  it('普通单省用户 → 不提示', () => {
+    expect(formatImplicitBranchWarning(
+      { branchCode: 'SX', visibleBranches: undefined },
+      {},
+    )).toBeNull();
+  });
+});
+
+describe('queryCommand 省份提示请求', () => {
+  it('--quiet 时不请求 /api/auth/me，只发送主查询', async () => {
+    cliState.quiet = true;
+    mocks.fetchCatalog.mockResolvedValue([
+      { key: 'KPI', path: '/kpi', fullPath: '/api/query/kpi' },
+    ]);
+    mocks.cxGet.mockResolvedValue({ success: true, data: [] });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await queryCommand('KPI', { params: {}, format: 'json' });
+
+    expect(mocks.cxGet).toHaveBeenCalledTimes(1);
+    expect(mocks.cxGet).toHaveBeenCalledWith('/api/query/kpi', {
+      query: {},
+      timeoutMs: undefined,
+    });
   });
 });
 

@@ -15,6 +15,8 @@ interface MeResp {
     role: string;
     organization?: string;
     dataScope?: string;
+    branchCode?: string;
+    visibleBranches?: string[];
     tokenType?: string;
     allowedRoutes?: string[];
   };
@@ -30,6 +32,11 @@ export async function whoamiCommand(): Promise<void> {
     console.log(kleur.cyan('Role:        '), d.role);
     if (d.organization) console.log(kleur.cyan('Organization:'), d.organization);
     if (d.dataScope) console.log(kleur.cyan('DataScope:   '), d.dataScope);
+    console.log(kleur.cyan('DefaultBranch:'), d.branchCode ?? '(none)');
+    console.log(
+      kleur.cyan('VisibleBranches:'),
+      d.visibleBranches?.length ? d.visibleBranches.join(', ') : '(not switchable)',
+    );
     console.log(kleur.cyan('TokenType:   '), d.tokenType ?? 'pat');
     if (cfg.tokenId) console.log(kleur.cyan('TokenId:     '), cfg.tokenId);
     console.log(kleur.cyan('BaseUrl:     '), cfg.baseUrl);
