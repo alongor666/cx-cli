@@ -33,6 +33,7 @@ import {
   configListCommand, configPathCommand,
 } from './commands/config-cmd.js';
 import { completionCommand } from './commands/completion.js';
+import { analyzeCommand, analysisCapabilitiesCommand } from './commands/analyze.js';
 import { apiDebug } from './api.js';
 import kleur from 'kleur';
 import { EXIT, exitCodeForError } from './exit-codes.js';
@@ -78,7 +79,27 @@ program
 program
   .command('whoami')
   .description('显示当前 PAT 对应的用户、角色、数据范围与 baseUrl')
-  .action(whoamiCommand);
+  .option('-f, --format <fmt>', '输出格式 table|json|csv')
+  .action((options) => whoamiCommand({ format: options.format }));
+
+program
+  .command('analyze <capability>')
+  .description('执行服务端登记的远程聚合分析能力；多省账号必须显式传 --targetBranch')
+  .allowUnknownOption(true)
+  .allowExcessArguments(true)
+  .option('-f, --format <fmt>', '输出格式 table|json|csv')
+  .option('--timeout <ms>', '请求超时毫秒数')
+  .action((capability, options, cmd) => analyzeCommand(capability, {
+    format: options.format,
+    timeoutMs: options.timeout ? Number(options.timeout) : undefined,
+    params: parseExtraParams(cmd.args.slice(1)),
+  }));
+
+program
+  .command('capabilities')
+  .description('列出服务端登记的远程分析能力及必填参数')
+  .option('-f, --format <fmt>', '输出格式 table|json|csv')
+  .action((options) => analysisCapabilitiesCommand({ format: options.format }));
 
 program
   .command('routes')

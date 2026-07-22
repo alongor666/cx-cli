@@ -6,6 +6,7 @@ import kleur from 'kleur';
 import { cxGet } from '../api.js';
 import { loadConfig } from '../config.js';
 import { failWith } from '../exit-codes.js';
+import { renderOutput, type OutputFormat } from '../output.js';
 
 interface MeResp {
   success: boolean;
@@ -22,11 +23,16 @@ interface MeResp {
   };
 }
 
-export async function whoamiCommand(): Promise<void> {
+export async function whoamiCommand(opts: { format?: OutputFormat } = {}): Promise<void> {
   try {
     const me = await cxGet<MeResp>('/api/auth/me');
     const d = me.data;
     const cfg = loadConfig();
+    if (opts.format && opts.format !== 'table') {
+      // 严禁把 token 返回给自动化/技能；tokenId 仅用于审计定位。
+      console.log(renderOutput({ ...d, tokenId: cfg.tokenId ?? null, baseUrl: cfg.baseUrl }, opts.format));
+      return;
+    }
     console.log(kleur.cyan('Username:    '), d.username);
     console.log(kleur.cyan('Display:     '), d.displayName);
     console.log(kleur.cyan('Role:        '), d.role);

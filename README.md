@@ -23,7 +23,9 @@ PAT 在 Web 端「设置 → 访问令牌」生成。配置存 `~/.chexian/confi
 | 命令 | 说明 |
 |---|---|
 | `cx login` / `cx logout` | 保存 / 清除本地 PAT |
-| `cx whoami` | 当前用户、角色、数据范围、tokenId、baseUrl |
+| `cx whoami [-f json]` | 当前用户、角色、数据范围、tokenId、baseUrl（不输出 PAT） |
+| `cx capabilities` | 服务端登记的远程分析能力、必填参数和目标领域 |
+| `cx analyze <capability>` | 执行登记的远程聚合分析；多省账号必须显式指定 `--targetBranch` |
 | `cx routes [--tag t] [--search kw] [--refresh]` | 列出全部查询路由（按 tag 分组；24h 本地缓存；含 timeWindow 时间口径列：window 任意窗口 / rolling 近 N 天 / policy-year 保单年度切片 / ytd-progress 年度计划进度 / cohort-development 批次发展 / snapshot 状态快照） |
 | `cx query <key\|path> [--参数=值 ...]` | 调用查询路由（核心命令，见下） |
 | `cx sql "<SELECT...>"` / `cx sql -` | DuckDB SQL 直通（强制聚合 + 行级权限自动注入；`-` 读 stdin） |
@@ -73,6 +75,7 @@ cx query /repair/overview                 # 3) 任意 / 开头 path 直通（不
 
 ```bash
 cx query KPI --year=2026 --format=json | jq '.[0]'
+cx analyze operating-trend --startDate=2026-01-01 --endDate=2026-01-31 --targetBranch=SX
 cx query TREND --granularity=week --format=csv > trend.csv
 echo "SELECT org_level_3, SUM(premium) p FROM PolicyFact GROUP BY 1 ORDER BY p DESC" | cx sql -
 cx routes --format=json | jq -r '.[].key'

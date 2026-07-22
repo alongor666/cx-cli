@@ -1,6 +1,6 @@
 {
   "name": "@chexian/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "chexian-api 只读 CLI（PAT 鉴权，cx query/login/whoami）",
   "type": "module",
   "main": "dist/index.js",
@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "build:bin": "bun build src/index.ts --compile --minify --outfile dist/cx",
-    "build:bin:all": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/cx-darwin-arm64 && bun build src/index.ts --compile --minify --target=bun-darwin-x64 --outfile dist/cx-darwin-x64 && bun build src/index.ts --compile --minify --target=bun-linux-x64 --outfile dist/cx-linux-x64 && bun build src/index.ts --compile --minify --target=bun-linux-arm64 --outfile dist/cx-linux-arm64",
+    "build:bin:all": "bun build src/index.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/cx-darwin-arm64 && bun build src/index.ts --compile --minify --target=bun-darwin-x64 --outfile dist/cx-darwin-x64 && bun build src/index.ts --compile --minify --target=bun-linux-x64 --outfile dist/cx-linux-x64 && bun build src/index.ts --compile --minify --target=bun-linux-arm64 --outfile dist/cx-linux-arm64 && bun build src/index.ts --compile --minify --target=bun-windows-x64 --outfile dist/cx-windows-x64.exe && bun build src/index.ts --compile --minify --target=bun-windows-arm64 --outfile dist/cx-windows-arm64.exe",
+    "package:release": "bun run build:bin:all && node scripts/package-release.mjs",
     "dev": "tsx src/index.ts",
     "bench": "node scripts/benchmark.mjs",
     "bench:write": "node scripts/benchmark.mjs --write",

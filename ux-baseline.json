@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-07-15T03:24:40.371Z",
+  "measured_at": "2026-07-22T06:52:10.731Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -25,7 +25,7 @@
           ],
           "doc": "根帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx [options] [command]\n\nchexian-api 只读 CLI（PAT 鉴权）— 车险数据分析平台命令行入口\n\nOptions:\n  -V, --version                  output the version number\n  --no-color                     禁用彩色输出（也尊重 NO_COLOR 环境变量）\n  -q, --quiet                    抑制提示性输出（错误仍打印到 stderr）\n  --verbose                      stderr 打印请求 URL 与耗时\n  -h, --help                     display help for command\n\nCommands:\n  login [options]                保存 PAT 到 ~/.chexian/config.json（chmod 600）\n  logout                         清除本地保存的 PAT（不会吊销服务端 token）\n  whoami                         显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n  routes [options]               列出所有可用查询路由（按 tag 分组）\n  query [options] [key|path]     调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺\n                                 key 或 -i 进入交互式构建器\n  sql [options] <query>          DuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n  fields [options]               列出字段注册表（含 column 可查列名 / queryable /\n                                 真实类型）。--groupable 仅列可分组字段；--verbose 附 ETL\n                                 入库别名。\n  metrics [options]              列出指标注册表。--category 按分类过滤。\n  describe [options] <relation>  自省视图 schema（列名/类型）。relation\n                                 须在联邦白名单内（PolicyFact / RenewalTrackerFact\n                                 等派生视图）。\n  cube [options]                 语义层「选指标 × 任意维度子集」可组合查询。续保族需\n                                 --start/--end/--cutoff；PolicyFact 指标走标准筛选器。额外\n                                 --<筛选>=值 透传。\n  presets [options]              列出筛选器 schema 与车型快捷预设。\n  filters [options]              列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh\n                                 强刷\n  data [options] <sub>           数据域只读元信息：version（数据新鲜度）| files（文件清单）|\n                                 metadata（数据集元数据）\n  health [options]               一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n  batch [options]                从 stdin 读 JSONL（{route, params?}）批量调用，复用\n                                 keep-alive 连接\n  config                         管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n  completion <shell>             输出 shell 补全脚本（bash | zsh）\n  help [command]                 display help for command\n\n示例:\n  $ cx login                          保存 PAT\n  $ cx routes --search 赔案           按关键词找路由\n  $ cx query KPI --year=2026          调用 KPI 查询\n  $ cx query /repair/overview         path 直通调用\n  $ echo \"SELECT ...\" | cx sql -      stdin 管道 SQL\n  $ cx health                         连通性诊断\n\n退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流",
+          "stdout": "Usage: cx [options] [command]\n\nchexian-api 只读 CLI（PAT 鉴权）— 车险数据分析平台命令行入口\n\nOptions:\n  -V, --version                   output the version number\n  --no-color                      禁用彩色输出（也尊重 NO_COLOR 环境变量）\n  -q, --quiet                     抑制提示性输出（错误仍打印到 stderr）\n  --verbose                       stderr 打印请求 URL 与耗时\n  -h, --help                      display help for command\n\nCommands:\n  login [options]                 保存 PAT 到 ~/.chexian/config.json（chmod 600）\n  logout                          清除本地保存的 PAT（不会吊销服务端 token）\n  whoami [options]                显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n  analyze [options] <capability>  执行服务端登记的远程聚合分析能力；多省账号必须显式传 --targetBranch\n  capabilities [options]          列出服务端登记的远程分析能力及必填参数\n  routes [options]                列出所有可用查询路由（按 tag 分组）\n  query [options] [key|path]      调用查询路由（key 宽容匹配 / catalog path / 以 / 开头直通）；缺\n                                  key 或 -i 进入交互式构建器\n  sql [options] <query>           DuckDB SELECT/WITH 直通；参数为 - 时从 stdin 读取\n  fields [options]                列出字段注册表（含 column 可查列名 / queryable /\n                                  真实类型）。--groupable 仅列可分组字段；--verbose 附 ETL\n                                  入库别名。\n  metrics [options]               列出指标注册表。--category 按分类过滤。\n  describe [options] <relation>   自省视图 schema（列名/类型）。relation\n                                  须在联邦白名单内（PolicyFact / RenewalTrackerFact\n                                  等派生视图）。\n  cube [options]                  语义层「选指标 × 任意维度子集」可组合查询。续保族需\n                                  --start/--end/--cutoff；PolicyFact 指标走标准筛选器。额外\n                                  --<筛选>=值 透传。\n  presets [options]               列出筛选器 schema 与车型快捷预设。\n  filters [options]               列出筛选维度的可选值（写查询条件前先看维度有哪些值）；本地缓存 4h，--refresh\n                                  强刷\n  data [options] <sub>            数据域只读元信息：version（数据新鲜度）| files（文件清单）|\n                                  metadata（数据集元数据）\n  health [options]                一站式连通性诊断（/health 存活 + 数据版本 + 延迟）\n  batch [options]                 从 stdin 读 JSONL（{route, params?}）批量调用，复用\n                                  keep-alive 连接\n  config                          管理本地配置 ~/.chexian/config.json（白名单: baseUrl）\n  completion <shell>              输出 shell 补全脚本（bash | zsh）\n  help [command]                  display help for command\n\n示例:\n  $ cx login                          保存 PAT\n  $ cx routes --search 赔案           按关键词找路由\n  $ cx query KPI --year=2026          调用 KPI 查询\n  $ cx query /repair/overview         path 直通调用\n  $ echo \"SELECT ...\" | cx sql -      stdin 管道 SQL\n  $ cx health                         连通性诊断\n\n退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流",
           "stderr": ""
         },
         "help-login": {
@@ -55,7 +55,27 @@
           ],
           "doc": "whoami 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx whoami [options]\n\n显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n\nOptions:\n  -h, --help  display help for command",
+          "stdout": "Usage: cx whoami [options]\n\n显示当前 PAT 对应的用户、角色、数据范围与 baseUrl\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-analyze": {
+          "argv": [
+            "analyze",
+            "--help"
+          ],
+          "doc": "analyze 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx analyze [options] <capability>\n\n执行服务端登记的远程聚合分析能力；多省账号必须显式传 --targetBranch\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  --timeout <ms>      请求超时毫秒数\n  -h, --help          display help for command",
+          "stderr": ""
+        },
+        "help-capabilities": {
+          "argv": [
+            "capabilities",
+            "--help"
+          ],
+          "doc": "capabilities 帮助",
+          "exitCode": 0,
+          "stdout": "Usage: cx capabilities [options]\n\n列出服务端登记的远程分析能力及必填参数\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
           "stderr": ""
         },
         "help-routes": {
@@ -284,7 +304,7 @@
           ],
           "doc": "completion bash 脚本（离线 exit 0，R6 用）",
           "exitCode": 0,
-          "stdout": "# cx bash completion\n_cx_completions() {\n  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n  if [ \"$COMP_CWORD\" -eq 1 ]; then\n    COMPREPLY=( $(compgen -W \"login logout whoami routes query sql fields metrics describe cube presets filters data health batch config completion help\" -- \"$cur\") )\n  else\n    COMPREPLY=( $(compgen -W \"--version --no-color --quiet --verbose --help\" -- \"$cur\") )\n  fi\n}\ncomplete -F _cx_completions cx",
+          "stdout": "# cx bash completion\n_cx_completions() {\n  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n  if [ \"$COMP_CWORD\" -eq 1 ]; then\n    COMPREPLY=( $(compgen -W \"login logout whoami analyze capabilities routes query sql fields metrics describe cube presets filters data health batch config completion help\" -- \"$cur\") )\n  else\n    COMPREPLY=( $(compgen -W \"--version --no-color --quiet --verbose --help\" -- \"$cur\") )\n  fi\n}\ncomplete -F _cx_completions cx",
           "stderr": "# 安装: cx completion bash >> ~/.bashrc && source ~/.bashrc"
         }
       }
