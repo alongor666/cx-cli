@@ -8,7 +8,17 @@ import kleur from 'kleur';
 import { cxGet } from '../api.js';
 import { EXIT, failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
+import { loadConfig } from '../config.js';
+import { toWhoamiMachineView } from './whoami.js';
 import pkg from '../../package.json' with { type: 'json' };
+
+export interface AnalysisParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'date';
+  required?: boolean;
+  description: string;
+  enum?: string[];
+}
 
 export interface AnalysisCapability {
   id: string;
@@ -20,6 +30,10 @@ export interface AnalysisCapability {
   allowedParams: string[];
   requiresExplicitBranchForMultiBranch: boolean;
   domain: string;
+  fixedParams?: Record<string, string>;
+  parameters: AnalysisParameter[];
+  timeWindow: string;
+  timeWindowNote?: string;
 }
 
 export function validateAnalysisParams(
@@ -35,7 +49,7 @@ export function validateAnalysisParams(
   return `${capability.name} 不支持参数: ${unsupported.join(', ')}；允许参数: ${capability.allowedParams.join(', ')}`;
 }
 
-interface CapabilitiesResponse {
+export interface CapabilitiesResponse {
   success: boolean;
   data: { version: number; minCliVersion: string; capabilities: AnalysisCapability[] };
 }
@@ -49,11 +63,37 @@ export interface BranchScope {
 
 interface ScopeResponse {
   success: boolean;
-  data: { branchCode?: string; visibleBranches?: string[]; branchScope?: BranchScope };
+  data: {
+    username: string;
+    displayName: string;
+    role: string;
+    organization?: string;
+    dataScope?: string;
+    branchCode?: string;
+    visibleBranches?: string[];
+    tokenType?: string;
+    allowedRoutes?: string[];
+    branchScope?: BranchScope;
+  };
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value as Record<string, unknown>).every((item) => typeof item === 'string');
+}
+
+function isAnalysisParameter(value: unknown): value is AnalysisParameter {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<AnalysisParameter>;
+  return typeof item.name === 'string'
+    && ['string', 'number', 'boolean', 'date'].includes(String(item.type))
+    && typeof item.description === 'string'
+    && (item.required === undefined || typeof item.required === 'boolean')
+    && (item.enum === undefined || isStringArray(item.enum));
 }
 
 function versionTuple(value: string): [number, number, number] | null {
@@ -86,7 +126,11 @@ export function decodeCapabilitiesResponse(value: unknown): CapabilitiesResponse
       || typeof item.fullPath !== 'string' || !item.fullPath.startsWith('/api/query/')
       || !isStringArray(item.requiredParams) || !isStringArray(item.allowedParams)
       || typeof item.requiresExplicitBranchForMultiBranch !== 'boolean'
-      || typeof item.domain !== 'string') {
+      || typeof item.domain !== 'string'
+      || (item.fixedParams !== undefined && !isStringRecord(item.fixedParams))
+      || !Array.isArray(item.parameters) || !item.parameters.every(isAnalysisParameter)
+      || typeof item.timeWindow !== 'string'
+      || (item.timeWindowNote !== undefined && typeof item.timeWindowNote !== 'string')) {
       throw new Error('能力目录契约异常：capabilities 含非法项目');
     }
   }
@@ -139,10 +183,14 @@ export function needsBranchScope(
   return capability.requiresExplicitBranchForMultiBranch || Boolean(params.targetBranch?.trim());
 }
 
-export async function fetchAnalysisCapabilities(): Promise<AnalysisCapability[]> {
+export async function fetchAnalysisCatalog(): Promise<CapabilitiesResponse['data']> {
   const raw = await cxGet<unknown>('/api/discover/analysis-capabilities');
   const response = decodeCapabilitiesResponse(raw);
-  return response.data.capabilities;
+  return response.data;
+}
+
+export async function fetchAnalysisCapabilities(): Promise<AnalysisCapability[]> {
+  return (await fetchAnalysisCatalog()).capabilities;
 }
 
 export async function analysisCapabilitiesCommand(opts: { format?: OutputFormat }): Promise<void> {
@@ -157,10 +205,21 @@ export async function analysisCapabilitiesCommand(opts: { format?: OutputFormat 
 
 export async function analyzeCommand(
   id: string,
-  opts: { format?: OutputFormat; timeoutMs?: number; params: Record<string, string> },
+  opts: {
+    format?: OutputFormat;
+    timeoutMs?: number;
+    params: Record<string, string>;
+    evidence?: boolean;
+  },
 ): Promise<void> {
   try {
-    const capabilities = await fetchAnalysisCapabilities();
+    if (opts.evidence && opts.format && opts.format !== 'json') {
+      process.stderr.write(kleur.red('✘ --evidence 仅支持 --format=json') + '\n');
+      process.exit(EXIT.USAGE);
+    }
+
+    const catalog = await fetchAnalysisCatalog();
+    const capabilities = catalog.capabilities;
     const capability = capabilities.find((item) => item.id === id);
     if (!capability) {
       process.stderr.write(kleur.red(`✘ 未知分析能力: ${id}`) + '\n');
@@ -180,8 +239,9 @@ export async function analyzeCommand(
       process.exit(EXIT.USAGE);
     }
 
-    if (needsBranchScope(capability, opts.params)) {
-      const scope = await cxGet<ScopeResponse>('/api/auth/me');
+    let scope: ScopeResponse | undefined;
+    if (needsBranchScope(capability, opts.params) || opts.evidence) {
+      scope = await cxGet<ScopeResponse>('/api/auth/me');
       const branchIssue = validateBranchSelection(
         capability.requiresExplicitBranchForMultiBranch,
         scope.data.branchScope,
@@ -193,12 +253,70 @@ export async function analyzeCommand(
       }
     }
 
-    const response = await cxGet<{ success: boolean; data: unknown }>(capability.fullPath, {
-      query: opts.params,
+    const effectiveParams = { ...(capability.fixedParams ?? {}), ...opts.params };
+    const dataRequest = cxGet<{ success: boolean; data: unknown }>(capability.fullPath, {
+      query: effectiveParams,
       timeoutMs: opts.timeoutMs,
     });
-    const format = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
-    console.log(renderOutput(response.data, format));
+
+    if (!opts.evidence) {
+      const response = await dataRequest;
+      const format = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
+      console.log(renderOutput(response.data, format));
+      return;
+    }
+
+    const [response, versionResponse, health] = await Promise.all([
+      dataRequest,
+      cxGet<{ success: boolean; data: Record<string, unknown> }>('/api/data/version'),
+      cxGet<Record<string, unknown>>('/health'),
+    ]);
+    const cfg = loadConfig();
+    const branchScope = scope?.data.branchScope;
+    const requestedBranch = opts.params.targetBranch?.trim();
+    const evidence = {
+      schemaVersion: 1,
+      source: 'remote',
+      generatedAt: new Date().toISOString(),
+      cliVersion: pkg.version,
+      capabilityCatalog: {
+        version: catalog.version,
+        minCliVersion: catalog.minCliVersion,
+      },
+      capability: {
+        id: capability.id,
+        name: capability.name,
+        description: capability.description,
+        domain: capability.domain,
+        path: capability.fullPath,
+        timeWindow: capability.timeWindow,
+        timeWindowNote: capability.timeWindowNote ?? null,
+        requiredParams: capability.requiredParams,
+        fixedParams: capability.fixedParams ?? {},
+      },
+      parameters: {
+        requested: opts.params,
+        effective: effectiveParams,
+      },
+      effectiveBranch: requestedBranch
+        || branchScope?.defaultBranch
+        || scope?.data.branchCode
+        || null,
+      branchScope: branchScope ?? null,
+      identity: scope
+        ? toWhoamiMachineView(scope.data, cfg.tokenId ?? null, cfg.baseUrl)
+        : null,
+      health: {
+        success: health.success,
+        message: health.message,
+        releaseSha: health.releaseSha,
+        builtAt: health.builtAt,
+        timestamp: health.timestamp,
+      },
+      dataVersion: versionResponse.data,
+      data: response.data,
+    };
+    console.log(renderOutput(evidence, 'json'));
   } catch (error) {
     failWith(error);
   }

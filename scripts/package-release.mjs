@@ -33,8 +33,13 @@ const assets = await Promise.all(names.map(async (name) => {
 }));
 
 async function sourceCommit() {
-  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
   if (process.env.CX_SOURCE_COMMIT) return process.env.CX_SOURCE_COMMIT;
+  try {
+    const syncedSource = (await readFile(path.join(root, 'source-commit.txt'), 'utf8')).trim();
+    if (syncedSource) return syncedSource;
+  } catch {
+    // chexian-api 本地构建没有 source-commit.txt，继续回退当前 Git 提交。
+  }
   try {
     const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
     return stdout.trim();

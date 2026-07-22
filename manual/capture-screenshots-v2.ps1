@@ -12,7 +12,7 @@
 # 2. 在 PowerShell 中运行：.\capture-screenshots-v2.ps1
 #
 # 前置条件：
-# - 已安装 cx-windows.exe 并添加到 PATH
+# - 已将发布资产重命名为 cx.exe 并安装 并添加到 PATH
 # - 已通过 `cx login` 进入登录态（验证：cx whoami 不报 401）
 # - Windows 10/11（使用内置截图工具）
 
@@ -56,7 +56,7 @@ try {
 } catch {
     Write-Host "✗ 错误: cx 命令不可用" -ForegroundColor Red
     Write-Host "  请检查:" -ForegroundColor Yellow
-    Write-Host "    1. cx-windows.exe 是否在 C:\tools\cx\ 目录" -ForegroundColor Yellow
+    Write-Host "    1. cx.exe 是否在 C:\tools\cx\ 目录" -ForegroundColor Yellow
     Write-Host "    2. C:\tools\cx\ 是否已添加到系统 PATH" -ForegroundColor Yellow
     Write-Host "    3. 是否已重启命令行窗口" -ForegroundColor Yellow
     Read-Host "`n按回车键退出"

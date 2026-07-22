@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ cxGet: vi.fn() }));
 vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
+vi.mock('../config.js', () => ({
+  loadConfig: () => ({ baseUrl: 'https://example.test', tokenId: 'pat-test' }),
+}));
 
 import {
   analyzeCommand,
@@ -23,11 +26,17 @@ const capabilities = [{
   fullPath: '/api/query/trend', requiredParams: ['startDate', 'endDate'],
   allowedParams: ['startDate', 'endDate', 'granularity', 'targetBranch'],
   requiresExplicitBranchForMultiBranch: true, domain: 'operating',
+  parameters: [
+    { name: 'startDate', type: 'date', required: true, description: '开始日期' },
+    { name: 'endDate', type: 'date', required: true, description: '结束日期' },
+    { name: 'targetBranch', type: 'string', description: '分公司' },
+  ],
+  timeWindow: 'window',
 }];
 
 const catalog = {
   success: true,
-  data: { version: 3, minCliVersion: '1.1.0', capabilities },
+  data: { version: 4, minCliVersion: '1.2.0', capabilities },
 };
 
 const multiScope = {
@@ -63,14 +72,14 @@ describe('cx analyze', () => {
 
   it('运行时校验目录形态与最低 CLI 版本', () => {
     expect(decodeCapabilitiesResponse(catalog).data.capabilities).toEqual(capabilities);
-    expect(() => decodeCapabilitiesResponse({ success: true, data: { version: 3, minCliVersion: '1.1.0' } }))
+    expect(() => decodeCapabilitiesResponse({ success: true, data: { version: 4, minCliVersion: '1.2.0' } }))
       .toThrow(/能力目录契约异常/);
     expect(() => decodeCapabilitiesResponse({
       success: true,
-      data: { version: 3, minCliVersion: '99.0.0', capabilities },
+      data: { version: 4, minCliVersion: '99.0.0', capabilities },
     })).toThrow(/低于服务端最低版本/);
-    expect(versionAtLeast('1.1.0', '1.1.0')).toBe(true);
-    expect(versionAtLeast('1.0.9', '1.1.0')).toBe(false);
+    expect(versionAtLeast('1.2.0', '1.2.0')).toBe(true);
+    expect(versionAtLeast('1.1.9', '1.2.0')).toBe(false);
   });
 
   it('按能力目录白名单拒绝未支持参数，避免服务端静默忽略', () => {
@@ -105,5 +114,49 @@ describe('cx analyze', () => {
       query: { startDate: '2026-01-01', endDate: '2026-01-31', targetBranch: 'SX' },
       timeoutMs: undefined,
     });
+  });
+
+  it('evidence 模式输出单一脱敏证据包并记录有效参数、范围与数据版本', async () => {
+    mocks.cxGet
+      .mockResolvedValueOnce(catalog)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          username: 'tester', displayName: '测试员', role: 'branch_admin',
+          branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope,
+        },
+      })
+      .mockResolvedValueOnce({ success: true, data: [{ period: '2026-W01', premium: 1 }] })
+      .mockResolvedValueOnce({
+        success: true,
+        data: { etlDate: '2026-07-21', contentVersion: 'data0001' },
+      })
+      .mockResolvedValueOnce({
+        success: true, message: 'Server is running', releaseSha: 'abc1234',
+        builtAt: '2026-07-22T00:00:00.000Z', timestamp: '2026-07-22T01:00:00.000Z',
+        pool: { shouldNotLeak: true },
+      });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await analyzeCommand('operating-trend', {
+      evidence: true,
+      params: { startDate: '2026-01-01', endDate: '2026-01-31', targetBranch: 'SX' },
+    });
+
+    const evidence = JSON.parse(String(log.mock.calls[0][0]));
+    expect(evidence).toMatchObject({
+      schemaVersion: 1,
+      source: 'remote',
+      cliVersion: '1.2.0',
+      capabilityCatalog: { version: 4, minCliVersion: '1.2.0' },
+      capability: { id: 'operating-trend', timeWindow: 'window' },
+      effectiveBranch: 'SX',
+      branchScope: multiScope,
+      identity: { username: 'tester', tokenId: 'pat-test', baseUrl: 'https://example.test' },
+      health: { releaseSha: 'abc1234' },
+      dataVersion: { etlDate: '2026-07-21', contentVersion: 'data0001' },
+      data: [{ period: '2026-W01', premium: 1 }],
+    });
+    expect(evidence.health).not.toHaveProperty('pool');
   });
 });

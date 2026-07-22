@@ -14,9 +14,11 @@ export function registerAnalyzeCommand(program: Command, handler: AnalyzeHandler
     .allowExcessArguments(true)
     .option('-f, --format <fmt>', '输出格式 table|json|csv')
     .option('--timeout <ms>', '请求超时毫秒数')
-    .action((capability: string, options: { format?: OutputFormat; timeout?: string }, cmd: Command) => handler(capability, {
+    .option('--evidence', '输出供 skills 复核的脱敏证据包（JSON）')
+    .action((capability: string, options: { format?: OutputFormat; timeout?: string; evidence?: boolean }, cmd: Command) => handler(capability, {
       format: options.format,
       timeoutMs: options.timeout ? Number(options.timeout) : undefined,
+      evidence: Boolean(options.evidence),
       params: parseExtraParams(cmd.args.slice(1)),
     }));
 }

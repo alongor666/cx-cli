@@ -14,6 +14,7 @@ describe('cx analyze argv contract', () => {
       '--startDate', '2026-01-01',
       '--endDate=2026-01-31',
       '--targetBranch', 'SC',
+      '--evidence',
       '--notAParam', 'x',
     ]);
 
@@ -24,6 +25,7 @@ describe('cx analyze argv contract', () => {
         targetBranch: 'SC',
         notAParam: 'x',
       },
+      evidence: true,
     }));
   });
 

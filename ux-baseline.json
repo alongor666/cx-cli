@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-07-22T07:19:52.072Z",
+  "measured_at": "2026-07-22T13:04:29.956Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -65,7 +65,7 @@
           ],
           "doc": "analyze 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx analyze [options] <capability>\n\n执行服务端登记的远程聚合分析能力；多省账号必须显式传 --targetBranch\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  --timeout <ms>      请求超时毫秒数\n  -h, --help          display help for command",
+          "stdout": "Usage: cx analyze [options] <capability>\n\n执行服务端登记的远程聚合分析能力；多省账号必须显式传 --targetBranch\n\nOptions:\n  -f, --format <fmt>  输出格式 table|json|csv\n  --timeout <ms>      请求超时毫秒数\n  --evidence          输出供 skills 复核的脱敏证据包（JSON）\n  -h, --help          display help for command",
           "stderr": ""
         },
         "help-capabilities": {

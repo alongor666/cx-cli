@@ -1,23 +1,21 @@
-# Windows 用户下载指南（中国加速）
+# Windows 用户下载指南
 
 ## 🚀 快速下载（推荐）
 
-### 方式一：JSdelivr CDN 加速（最快）
+### 方式一：GitHub Latest Release（推荐）
 
 **直接下载链接**：
 ```
-https://cdn.jsdelivr.net/gh/alongor666/cx-cli@v1.0.0/release/cx-windows.exe
+https://github.com/alongor666/cx-cli/releases/latest/download/cx-windows-x64.exe
 ```
 
-**优点**：
-- ✅ 国内 CDN 加速，速度快
-- ✅ 无需注册，直接下载
-- ✅ 自动同步 GitHub 最新版本
+ARM64 Windows 请把文件名改为 `cx-windows-arm64.exe`。同一发布页还提供
+`manifest.json` 与 `SHA256SUMS`，下载后应先核对 SHA-256。
 
 **操作**：
 1. 复制上面的链接到浏览器
-2. 等待下载完成（约 1-3 分钟）
-3. 保存到 `C:\tools\cx\cx-windows.exe`
+2. 同时下载 `SHA256SUMS` 并校验文件哈希
+3. 把二进制保存为 `C:\tools\cx\cx.exe`（必须重命名，才能直接运行 `cx`）
 
 ---
 
@@ -44,7 +42,7 @@ https://github.com/alongor666/cx-cli/tree/main/manual
 
 ---
 
-### 方式三：GitHub Releases（官方）
+### 方式三：GitHub Releases 发布页
 
 **官方地址**：
 ```
@@ -64,7 +62,9 @@ https://github.com/alongor666/cx-cli/releases
 
 ### 必需文件
 ```
-cx-windows.exe         # 主程序（51 MB）
+cx.exe                     # 从 cx-windows-x64.exe 或 cx-windows-arm64.exe 重命名
+SHA256SUMS                 # 发布资产哈希清单
+manifest.json              # 版本、源码提交指纹和资产元数据
 ```
 
 ### 可选文件（使用手册）
@@ -81,9 +81,9 @@ manual/
 
 ## 🔧 配置步骤
 
-### 1. 下载 cx-windows.exe
+### 1. 下载并重命名 cx-windows-x64.exe
 
-从上面的任一方式下载 `cx-windows.exe`
+从上面的官方发布地址下载 `cx-windows-x64.exe`，校验哈希后重命名为 `cx.exe`。
 
 ### 2. 创建目录
 
@@ -110,7 +110,7 @@ manual/
 cx --version
 ```
 
-应该显示：`0.1.0` 或类似版本号
+应该显示：`1.1.0` 或更高版本号
 
 ---
 
@@ -124,23 +124,15 @@ GitHub 在国内访问较慢，原因是：
 - 带宽限制
 
 **解决方法**：
-- 使用 CDN 镜像（如 JSdelivr）
+- 使用组织批准的 GitHub Release 代理
 - 使用代理镜像（如 FastGit）
 - 使用 Gitee 等国内平台
 
-### JSdelivr CDN
+### Release 资产与仓库文件不同
 
-**特点**：
-- 全球 CDN，包括国内节点
-- 支持 GitHub 文件加速
-- 自动缓存，速度快
-
-**使用方法**：
-```
-原链接：https://github.com/alongor666/cx-cli/releases/download/v1.0.0/cx-windows.exe
-
-CDN 链接：https://cdn.jsdelivr.net/gh/alongor666/cx-cli@v1.0.0/release/cx-windows.exe
-```
+`cx-windows-x64.exe` 是 GitHub Release 资产，不在镜像仓库源码目录中。不要把
+`cdn.jsdelivr.net/gh/...` 仓库文件链接当作 Release 下载地址；应使用上面的
+`releases/latest/download/...` 官方链接或经过组织批准的代理。
 
 ### FastGit 镜像
 
@@ -171,7 +163,6 @@ CDN 链接：https://cdn.jsdelivr.net/gh/alongor666/cx-cli@v1.0.0/release/cx-win
 
 | 方式 | 预计速度 | 预计时间 |
 |------|---------|---------|
-| **JSdelivr CDN** | 5-20 MB/s | 3-10 秒 |
 | **FastGit 镜像** | 1-5 MB/s | 1-5 分钟 |
 | **GitHub 直连** | 50-500 KB/s | 10-30 分钟 |
 | **Gitee** | 2-10 MB/s | 10-30 秒 |
