@@ -27,10 +27,24 @@ interface RequestOpts {
   timeoutMs?: number;
 }
 
+export interface CxResponse<T> {
+  data: T;
+  /** 服务端审计中间件返回的 X-Request-Id，可用于关联 PM2/SQL 日志。 */
+  requestId: string | null;
+}
+
 /** --verbose 时由 index.ts 置 true：stderr 打印请求 URL 与耗时 */
 export const apiDebug = { verbose: false };
 
 export async function cxGet<T = unknown>(routePath: string, opts: RequestOpts = {}): Promise<T> {
+  return (await cxGetWithMeta<T>(routePath, opts)).data;
+}
+
+/** 与 cxGet 相同，但保留响应头中的服务端 requestId，供 evidence 审计链使用。 */
+export async function cxGetWithMeta<T = unknown>(
+  routePath: string,
+  opts: RequestOpts = {},
+): Promise<CxResponse<T>> {
   const cfg = loadConfig();
   if (!cfg.token) {
     throw new CxApiError(401, 'No PAT configured. Run: cx login');
@@ -60,7 +74,12 @@ export async function cxGet<T = unknown>(routePath: string, opts: RequestOpts = 
   }
 }
 
-async function doRequest<T>(url: URL, token: string, signal?: AbortSignal, attempt = 1): Promise<T> {
+async function doRequest<T>(
+  url: URL,
+  token: string,
+  signal?: AbortSignal,
+  attempt = 1,
+): Promise<CxResponse<T>> {
   const maxAttempts = 4;
   let res: Response;
   try {
@@ -108,7 +127,10 @@ async function doRequest<T>(url: URL, token: string, signal?: AbortSignal, attem
     throw new CxApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`);
   }
 
-  return (await res.json()) as T;
+  return {
+    data: (await res.json()) as T,
+    requestId: res.headers.get('X-Request-Id'),
+  };
 }
 
 async function safeJson(res: Response): Promise<any> {

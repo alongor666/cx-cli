@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ cxGet: vi.fn() }));
-vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
+const mocks = vi.hoisted(() => ({ cxGet: vi.fn(), cxGetWithMeta: vi.fn() }));
+vi.mock('../api.js', () => ({ cxGet: mocks.cxGet, cxGetWithMeta: mocks.cxGetWithMeta }));
 vi.mock('../config.js', () => ({
   loadConfig: () => ({ baseUrl: 'https://example.test', tokenId: 'pat-test' }),
 }));
@@ -11,7 +11,9 @@ import {
   fetchAnalysisCapabilities,
   decodeCapabilitiesResponse,
   needsBranchScope,
+  sha256Canonical,
   validateAnalysisParams,
+  validateAnalysisResult,
   validateBranchSelection,
   versionAtLeast,
 } from '../commands/analyze.js';
@@ -19,6 +21,7 @@ import {
 afterEach(() => {
   vi.restoreAllMocks();
   mocks.cxGet.mockReset();
+  mocks.cxGetWithMeta.mockReset();
 });
 
 const capabilities = [{
@@ -32,11 +35,15 @@ const capabilities = [{
     { name: 'targetBranch', type: 'string', description: '分公司' },
   ],
   timeWindow: 'window',
+  resultSchema: {
+    id: 'operating.trend.v1', version: 1, kind: 'records', recordsPath: '$',
+    requiredFields: ['time_period', 'premium'], dimensionFields: ['time_period'], metricFields: ['premium'],
+  },
 }];
 
 const catalog = {
   success: true,
-  data: { version: 4, minCliVersion: '1.2.0', capabilities },
+  data: { version: 5, minCliVersion: '1.3.0', capabilities },
 };
 
 const multiScope = {
@@ -72,14 +79,31 @@ describe('cx analyze', () => {
 
   it('运行时校验目录形态与最低 CLI 版本', () => {
     expect(decodeCapabilitiesResponse(catalog).data.capabilities).toEqual(capabilities);
-    expect(() => decodeCapabilitiesResponse({ success: true, data: { version: 4, minCliVersion: '1.2.0' } }))
+    expect(() => decodeCapabilitiesResponse({ success: true, data: { version: 5, minCliVersion: '1.3.0' } }))
       .toThrow(/能力目录契约异常/);
     expect(() => decodeCapabilitiesResponse({
       success: true,
       data: { version: 4, minCliVersion: '99.0.0', capabilities },
     })).toThrow(/低于服务端最低版本/);
-    expect(versionAtLeast('1.2.0', '1.2.0')).toBe(true);
-    expect(versionAtLeast('1.1.9', '1.2.0')).toBe(false);
+    expect(versionAtLeast('1.3.0', '1.3.0')).toBe(true);
+    expect(versionAtLeast('1.2.9', '1.3.0')).toBe(false);
+  });
+
+  it('按 resultSchema fail-closed 校验形态和必需字段', () => {
+    const schema = capabilities[0].resultSchema;
+    expect(validateAnalysisResult(schema, [{ time_period: '2026-W01', premium: 1 }])).toBeNull();
+    expect(validateAnalysisResult(schema, { time_period: '2026-W01', premium: 1 })).toMatch(/预期.*数组/);
+    expect(validateAnalysisResult(schema, [{ time_period: '2026-W01' }])).toMatch(/缺少字段 premium/);
+    expect(validateAnalysisResult({ ...schema, recordsPath: '$.rows' }, {
+      rows: [{ time_period: '2026-W01', premium: 1 }],
+    })).toBeNull();
+  });
+
+  it('规范化 SHA-256 不受对象键顺序影响，结果变化会改变指纹', () => {
+    const left = sha256Canonical({ b: 2, a: { y: 2, x: 1 } });
+    expect(left).toBe(sha256Canonical({ a: { x: 1, y: 2 }, b: 2 }));
+    expect(left).not.toBe(sha256Canonical({ a: { x: 1, y: 3 }, b: 2 }));
+    expect(left).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('按能力目录白名单拒绝未支持参数，避免服务端静默忽略', () => {
@@ -102,7 +126,7 @@ describe('cx analyze', () => {
         success: true,
         data: { branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope },
       })
-      .mockResolvedValueOnce({ success: true, data: [{ period: '2026-W01', premium: 1 }] });
+      .mockResolvedValueOnce({ success: true, data: [{ time_period: '2026-W01', premium: 1 }] });
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     await analyzeCommand('operating-trend', {
@@ -126,7 +150,6 @@ describe('cx analyze', () => {
           branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope,
         },
       })
-      .mockResolvedValueOnce({ success: true, data: [{ period: '2026-W01', premium: 1 }] })
       .mockResolvedValueOnce({
         success: true,
         data: { etlDate: '2026-07-21', contentVersion: 'data0001' },
@@ -136,6 +159,10 @@ describe('cx analyze', () => {
         builtAt: '2026-07-22T00:00:00.000Z', timestamp: '2026-07-22T01:00:00.000Z',
         pool: { shouldNotLeak: true },
       });
+    mocks.cxGetWithMeta.mockResolvedValueOnce({
+      data: { success: true, data: [{ time_period: '2026-W01', premium: 1 }] },
+      requestId: 'request-123',
+    });
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     await analyzeCommand('operating-trend', {
@@ -145,17 +172,27 @@ describe('cx analyze', () => {
 
     const evidence = JSON.parse(String(log.mock.calls[0][0]));
     expect(evidence).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: 'remote',
-      cliVersion: '1.2.0',
-      capabilityCatalog: { version: 4, minCliVersion: '1.2.0' },
-      capability: { id: 'operating-trend', timeWindow: 'window' },
+      requestId: 'request-123',
+      cliVersion: '1.3.0',
+      capabilityCatalog: { version: 5, minCliVersion: '1.3.0' },
+      capability: {
+        id: 'operating-trend', timeWindow: 'window',
+        resultSchema: { id: 'operating.trend.v1', version: 1 },
+      },
       effectiveBranch: 'SX',
       branchScope: multiScope,
       identity: { username: 'tester', tokenId: 'pat-test', baseUrl: 'https://example.test' },
       health: { releaseSha: 'abc1234' },
       dataVersion: { etlDate: '2026-07-21', contentVersion: 'data0001' },
-      data: [{ period: '2026-W01', premium: 1 }],
+      fingerprints: {
+        algorithm: 'sha256',
+        parameters: expect.stringMatching(/^[a-f0-9]{64}$/),
+        request: expect.stringMatching(/^[a-f0-9]{64}$/),
+        result: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+      data: [{ time_period: '2026-W01', premium: 1 }],
     });
     expect(evidence.health).not.toHaveProperty('pool');
   });

@@ -24,8 +24,8 @@ PAT 在 Web 端「设置 → 访问令牌」生成。配置存 `~/.chexian/confi
 |---|---|
 | `cx login` / `cx logout` | 保存 / 清除本地 PAT |
 | `cx whoami [-f json]` | 当前用户、角色、数据范围、tokenId、baseUrl（不输出 PAT） |
-| `cx capabilities` | 服务端登记的远程分析能力、参数 schema、固定参数、时间口径和目标领域 |
-| `cx analyze <capability>` | 执行登记的远程聚合分析；多省账号必须显式指定 `--targetBranch`；`--evidence` 输出 skills 证据包 |
+| `cx capabilities` | 服务端登记的远程分析能力、参数 schema、固定参数、结果 schema、时间口径和目标领域 |
+| `cx analyze <capability>` | 执行登记的远程聚合分析并校验结果 schema；多省账号必须显式指定 `--targetBranch`；`--evidence` 输出 skills 证据包 |
 | `cx routes [--tag t] [--search kw] [--refresh]` | 列出全部查询路由（按 tag 分组；24h 本地缓存；含 timeWindow 时间口径列：window 任意窗口 / rolling 近 N 天 / policy-year 保单年度切片 / ytd-progress 年度计划进度 / cohort-development 批次发展 / snapshot 状态快照） |
 | `cx query <key\|path> [--参数=值 ...]` | 调用查询路由（核心命令，见下） |
 | `cx sql "<SELECT...>"` / `cx sql -` | DuckDB SQL 直通（强制聚合 + 行级权限自动注入；`-` 读 stdin） |
@@ -85,6 +85,8 @@ cx routes --format=json | jq -r '.[].key'
 cx data version --format=json | jq -r '.data_date // .date'
 if ! cx health -q; then echo "服务异常"; fi
 ```
+
+`--evidence` schema v2 额外包含服务端 `requestId`、能力 `resultSchema`，以及规范化参数、请求和结果的 SHA-256 指纹。对象键顺序不会改变指纹；结果字段缺失或响应形态偏离目录契约时命令 fail-closed，不输出看似成功的证据包。
 
 ## 配置优先级
 

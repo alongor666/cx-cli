@@ -5,7 +5,8 @@
  * 也不接受行级导出能力；能力、时间口径和必填参数均由服务端目录决定。
  */
 import kleur from 'kleur';
-import { cxGet } from '../api.js';
+import { createHash } from 'node:crypto';
+import { cxGet, cxGetWithMeta } from '../api.js';
 import { EXIT, failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
 import { loadConfig } from '../config.js';
@@ -34,6 +35,17 @@ export interface AnalysisCapability {
   parameters: AnalysisParameter[];
   timeWindow: string;
   timeWindowNote?: string;
+  resultSchema: AnalysisResultSchema;
+}
+
+export interface AnalysisResultSchema {
+  id: string;
+  version: number;
+  kind: 'record' | 'records';
+  recordsPath: '$' | '$.rows';
+  requiredFields: string[];
+  dimensionFields: string[];
+  metricFields: string[];
 }
 
 export function validateAnalysisParams(
@@ -96,6 +108,66 @@ function isAnalysisParameter(value: unknown): value is AnalysisParameter {
     && (item.enum === undefined || isStringArray(item.enum));
 }
 
+function isAnalysisResultSchema(value: unknown): value is AnalysisResultSchema {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<AnalysisResultSchema>;
+  return typeof item.id === 'string'
+    && Number.isInteger(item.version) && Number(item.version) > 0
+    && (item.kind === 'record' || item.kind === 'records')
+    && (item.recordsPath === '$' || item.recordsPath === '$.rows')
+    && isStringArray(item.requiredFields)
+    && isStringArray(item.dimensionFields)
+    && isStringArray(item.metricFields);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function validateAnalysisResult(schema: AnalysisResultSchema, data: unknown): string | null {
+  let records: unknown[];
+  if (schema.kind === 'record') {
+    if (schema.recordsPath !== '$' || !isRecord(data)) {
+      return `${schema.id}: 预期 response.data 为单一对象`;
+    }
+    records = [data];
+  } else if (schema.recordsPath === '$') {
+    if (!Array.isArray(data)) return `${schema.id}: 预期 response.data 为数组`;
+    records = data;
+  } else {
+    if (!isRecord(data) || !Array.isArray(data.rows)) {
+      return `${schema.id}: 预期 response.data.rows 为数组`;
+    }
+    records = data.rows;
+  }
+
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!isRecord(record)) return `${schema.id}: 第 ${index + 1} 条记录不是对象`;
+    const missing = schema.requiredFields.filter((field) => !(field in record));
+    if (missing.length > 0) {
+      return `${schema.id}: 第 ${index + 1} 条记录缺少字段 ${missing.join(', ')}`;
+    }
+  }
+  return null;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => item === undefined ? null : canonicalize(item));
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.keys(value).sort().flatMap((key) => value[key] === undefined
+        ? []
+        : [[key, canonicalize(value[key])]]),
+    );
+  }
+  return value;
+}
+
+export function sha256Canonical(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+}
+
 function versionTuple(value: string): [number, number, number] | null {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(value);
   if (!match) return null;
@@ -130,7 +202,8 @@ export function decodeCapabilitiesResponse(value: unknown): CapabilitiesResponse
       || (item.fixedParams !== undefined && !isStringRecord(item.fixedParams))
       || !Array.isArray(item.parameters) || !item.parameters.every(isAnalysisParameter)
       || typeof item.timeWindow !== 'string'
-      || (item.timeWindowNote !== undefined && typeof item.timeWindowNote !== 'string')) {
+      || (item.timeWindowNote !== undefined && typeof item.timeWindowNote !== 'string')
+      || !isAnalysisResultSchema(item.resultSchema)) {
       throw new Error('能力目录契约异常：capabilities 含非法项目');
     }
   }
@@ -254,30 +327,36 @@ export async function analyzeCommand(
     }
 
     const effectiveParams = { ...(capability.fixedParams ?? {}), ...opts.params };
-    const dataRequest = cxGet<{ success: boolean; data: unknown }>(capability.fullPath, {
-      query: effectiveParams,
-      timeoutMs: opts.timeoutMs,
-    });
+    const requestOptions = { query: effectiveParams, timeoutMs: opts.timeoutMs };
 
     if (!opts.evidence) {
-      const response = await dataRequest;
+      const response = await cxGet<{ success: boolean; data: unknown }>(capability.fullPath, requestOptions);
+      const resultIssue = validateAnalysisResult(capability.resultSchema, response.data);
+      if (resultIssue) throw new Error(`分析结果不符合目录契约：${resultIssue}`);
       const format = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
       console.log(renderOutput(response.data, format));
       return;
     }
 
-    const [response, versionResponse, health] = await Promise.all([
-      dataRequest,
+    const [dataResponse, versionResponse, health] = await Promise.all([
+      cxGetWithMeta<{ success: boolean; data: unknown }>(capability.fullPath, requestOptions),
       cxGet<{ success: boolean; data: Record<string, unknown> }>('/api/data/version'),
       cxGet<Record<string, unknown>>('/health'),
     ]);
+    if (!dataResponse.requestId) {
+      throw new Error('分析响应缺少 X-Request-Id，无法形成可追踪证据链');
+    }
+    const response = dataResponse.data;
+    const resultIssue = validateAnalysisResult(capability.resultSchema, response.data);
+    if (resultIssue) throw new Error(`分析结果不符合目录契约：${resultIssue}`);
     const cfg = loadConfig();
     const branchScope = scope?.data.branchScope;
     const requestedBranch = opts.params.targetBranch?.trim();
     const evidence = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: 'remote',
       generatedAt: new Date().toISOString(),
+      requestId: dataResponse.requestId,
       cliVersion: pkg.version,
       capabilityCatalog: {
         version: catalog.version,
@@ -293,6 +372,7 @@ export async function analyzeCommand(
         timeWindowNote: capability.timeWindowNote ?? null,
         requiredParams: capability.requiredParams,
         fixedParams: capability.fixedParams ?? {},
+        resultSchema: capability.resultSchema,
       },
       parameters: {
         requested: opts.params,
@@ -314,6 +394,21 @@ export async function analyzeCommand(
         timestamp: health.timestamp,
       },
       dataVersion: versionResponse.data,
+      fingerprints: {
+        algorithm: 'sha256',
+        parameters: sha256Canonical(effectiveParams),
+        request: sha256Canonical({
+          capabilityId: capability.id,
+          path: capability.fullPath,
+          catalogVersion: catalog.version,
+          effectiveBranch: requestedBranch
+            || branchScope?.defaultBranch
+            || scope?.data.branchCode
+            || null,
+          parameters: effectiveParams,
+        }),
+        result: sha256Canonical(response.data),
+      },
       data: response.data,
     };
     console.log(renderOutput(evidence, 'json'));
