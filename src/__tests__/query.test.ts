@@ -32,8 +32,14 @@ describe('parseExtraParams', () => {
       .toEqual({ year: '2026', org_level_3: '分公司A' });
   });
 
-  it('忽略不含 = 的参数', () => {
-    expect(parseExtraParams(['--year=2026', '--debug'])).toEqual({ year: '2026' });
+  it('支持 --key value 形式且不静默吞参', () => {
+    expect(parseExtraParams(['--year', '2026', '--org_level_3', '分公司A']))
+      .toEqual({ year: '2026', org_level_3: '分公司A' });
+  });
+
+  it('裸 flag 与孤儿值 fail-closed', () => {
+    expect(() => parseExtraParams(['--year=2026', '--debug'])).toThrow(/缺少值/);
+    expect(() => parseExtraParams(['orphan'])).toThrow(/无法识别参数片段/);
   });
 
   it('保留 = 之后的所有内容（含等号）', () => {

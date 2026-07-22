@@ -23,6 +23,22 @@ interface MeResp {
   };
 }
 
+export function toWhoamiMachineView(d: MeResp['data'], tokenId: string | null, baseUrl: string) {
+  return {
+    username: d.username,
+    displayName: d.displayName,
+    role: d.role,
+    organization: d.organization ?? null,
+    dataScope: d.dataScope ?? null,
+    branchCode: d.branchCode ?? null,
+    visibleBranches: d.visibleBranches ?? [],
+    tokenType: d.tokenType ?? 'pat',
+    allowedRoutes: d.allowedRoutes ?? [],
+    tokenId,
+    baseUrl,
+  };
+}
+
 export async function whoamiCommand(opts: { format?: OutputFormat } = {}): Promise<void> {
   try {
     const me = await cxGet<MeResp>('/api/auth/me');
@@ -30,7 +46,7 @@ export async function whoamiCommand(opts: { format?: OutputFormat } = {}): Promi
     const cfg = loadConfig();
     if (opts.format && opts.format !== 'table') {
       // 严禁把 token 返回给自动化/技能；tokenId 仅用于审计定位。
-      console.log(renderOutput({ ...d, tokenId: cfg.tokenId ?? null, baseUrl: cfg.baseUrl }, opts.format));
+      console.log(renderOutput(toWhoamiMachineView(d, cfg.tokenId ?? null, cfg.baseUrl), opts.format));
       return;
     }
     console.log(kleur.cyan('Username:    '), d.username);

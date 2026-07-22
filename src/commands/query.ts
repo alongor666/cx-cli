@@ -9,7 +9,7 @@
 import kleur from 'kleur';
 import { cxGet } from '../api.js';
 import { renderOutput, type OutputFormat } from '../output.js';
-import { failWith, EXIT } from '../exit-codes.js';
+import { failWith, EXIT, CliUsageError } from '../exit-codes.js';
 import { applyPathParams } from '../path-params.js';
 import { cliState, note } from '../cli-state.js';
 import { fetchCatalog } from './routes.js';
@@ -221,16 +221,34 @@ export function resolveTarget(input: string, routes: RouteTarget[]): RouteTarget
 }
 
 /**
- * commander 的 --key=value 重复出现合并为对象。
- * 也支持 --filter key=value 形式（透传 query string）。
+ * commander 未登记的 query 参数支持 --key=value 与 --key value 两种形态。
+ * 裸 flag、孤儿值、空 key/value 均 fail-closed，禁止静默吞参后返回错误分析。
  */
 export function parseExtraParams(raw: string[]): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const item of raw) {
+  for (let index = 0; index < raw.length; index += 1) {
+    const item = raw[index];
+    if (!item.startsWith('--')) {
+      throw new CliUsageError(`无法识别参数片段 ${JSON.stringify(item)}；请使用 --key=value 或 --key value`);
+    }
     const eq = item.indexOf('=');
-    if (eq === -1) continue;
-    const key = item.slice(0, eq).replace(/^--/, '');
-    out[key] = item.slice(eq + 1);
+    if (eq !== -1) {
+      const key = item.slice(2, eq);
+      const value = item.slice(eq + 1);
+      if (!key || !value) {
+        throw new CliUsageError(`参数必须包含非空 key 与 value：${item}`);
+      }
+      out[key] = value;
+      continue;
+    }
+
+    const key = item.slice(2);
+    const value = raw[index + 1];
+    if (!key || value === undefined || value.startsWith('--')) {
+      throw new CliUsageError(`参数 ${item} 缺少值；请使用 ${item}=<value> 或 ${item} <value>`);
+    }
+    out[key] = value;
+    index += 1;
   }
   return out;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { exitCodeForError, EXIT } from '../exit-codes.js';
+import { CliUsageError, exitCodeForError, EXIT } from '../exit-codes.js';
 import { CxApiError } from '../api.js';
 
 describe('exit codes', () => {
@@ -17,5 +17,8 @@ describe('exit codes', () => {
   });
   it('非 CxApiError → GENERAL(1)', () => {
     expect(exitCodeForError(new Error('x'))).toBe(EXIT.GENERAL);
+  });
+  it('显式 CLI 用法错误 → USAGE(4)', () => {
+    expect(exitCodeForError(new CliUsageError('bad argv'))).toBe(EXIT.USAGE);
   });
 });

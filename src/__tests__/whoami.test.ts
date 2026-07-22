@@ -14,7 +14,7 @@ vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
 vi.mock('../config.js', () => ({ loadConfig: mocks.loadConfig }));
 vi.mock('../exit-codes.js', () => ({ failWith: mocks.failWith }));
 
-import { whoamiCommand } from '../commands/whoami.js';
+import { toWhoamiMachineView, whoamiCommand } from '../commands/whoami.js';
 
 describe('whoamiCommand — 分公司范围回显', () => {
   afterEach(() => {
@@ -43,5 +43,34 @@ describe('whoamiCommand — 分公司范围回显', () => {
     expect(output).toContain('DefaultBranch: SC');
     expect(output).toContain('VisibleBranches: SC, SX');
     expect(mocks.cxGet).toHaveBeenCalledWith('/api/auth/me');
+  });
+
+  it('机器输出只包含显式白名单，不透传服务端新增或敏感字段', () => {
+    const output = toWhoamiMachineView({
+      username: 'alice',
+      displayName: 'Alice',
+      role: 'branch_admin',
+      branchCode: 'SC',
+      visibleBranches: ['SC', 'SX'],
+      tokenType: 'pat',
+      allowedRoutes: ['/home'],
+      allowedIps: ['127.0.0.1'],
+      internalCredentialState: { marker: 'not-forwarded' },
+    } as any, 'pat-1', 'https://example.test');
+    expect(output).toEqual({
+      username: 'alice',
+      displayName: 'Alice',
+      role: 'branch_admin',
+      organization: null,
+      dataScope: null,
+      branchCode: 'SC',
+      visibleBranches: ['SC', 'SX'],
+      tokenType: 'pat',
+      allowedRoutes: ['/home'],
+      tokenId: 'pat-1',
+      baseUrl: 'https://example.test',
+    });
+    expect(JSON.stringify(output)).not.toContain('canary');
+    expect(JSON.stringify(output)).not.toContain('allowedIps');
   });
 });

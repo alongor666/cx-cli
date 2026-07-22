@@ -15,7 +15,11 @@ export const EXIT = {
   RATE_LIMITED: 5,
 } as const;
 
+/** 非 commander 自带、但同属命令行用法错误的显式异常。 */
+export class CliUsageError extends Error {}
+
 export function exitCodeForError(err: unknown): number {
+  if (err instanceof CliUsageError) return EXIT.USAGE;
   if (err instanceof CxApiError) {
     if (err.status === 401) return EXIT.AUTH;
     if (err.status === 403) return EXIT.FORBIDDEN;

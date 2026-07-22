@@ -8,6 +8,7 @@ import kleur from 'kleur';
 import { cxGet } from '../api.js';
 import { EXIT, failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
+import pkg from '../../package.json' with { type: 'json' };
 
 export interface AnalysisCapability {
   id: string;
@@ -36,12 +37,63 @@ export function validateAnalysisParams(
 
 interface CapabilitiesResponse {
   success: boolean;
-  data: { version: number; capabilities: AnalysisCapability[] };
+  data: { version: number; minCliVersion: string; capabilities: AnalysisCapability[] };
+}
+
+export interface BranchScope {
+  defaultBranch?: string;
+  visibleBranches: string[];
+  canSwitch: boolean;
+  canAggregateAll: boolean;
 }
 
 interface ScopeResponse {
   success: boolean;
-  data: { branchCode?: string; visibleBranches?: string[] };
+  data: { branchCode?: string; visibleBranches?: string[]; branchScope?: BranchScope };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function versionTuple(value: string): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(value);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+export function versionAtLeast(actual: string, minimum: string): boolean {
+  const left = versionTuple(actual);
+  const right = versionTuple(minimum);
+  if (!left || !right) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index];
+  }
+  return true;
+}
+
+export function decodeCapabilitiesResponse(value: unknown): CapabilitiesResponse {
+  const response = value as Partial<CapabilitiesResponse> | null;
+  const data = response?.data as CapabilitiesResponse['data'] | undefined;
+  if (response?.success !== true || !data || !Number.isInteger(data.version)
+    || typeof data.minCliVersion !== 'string' || !Array.isArray(data.capabilities)) {
+    throw new Error('能力目录契约异常：缺少 success/data/version/minCliVersion/capabilities');
+  }
+  for (const item of data.capabilities) {
+    if (!item || typeof item !== 'object'
+      || typeof item.id !== 'string' || typeof item.name !== 'string'
+      || typeof item.description !== 'string' || typeof item.path !== 'string'
+      || typeof item.fullPath !== 'string' || !item.fullPath.startsWith('/api/query/')
+      || !isStringArray(item.requiredParams) || !isStringArray(item.allowedParams)
+      || typeof item.requiresExplicitBranchForMultiBranch !== 'boolean'
+      || typeof item.domain !== 'string') {
+      throw new Error('能力目录契约异常：capabilities 含非法项目');
+    }
+  }
+  if (!versionAtLeast(pkg.version, data.minCliVersion)) {
+    throw new Error(`当前 cx ${pkg.version} 低于服务端最低版本 ${data.minCliVersion}，请升级 cx`);
+  }
+  return response as CapabilitiesResponse;
 }
 
 /**
@@ -50,21 +102,46 @@ interface ScopeResponse {
  */
 export function validateBranchSelection(
   requiresExplicitBranch: boolean,
-  visibleBranches: string[] | undefined,
+  scope: BranchScope | undefined,
   requestedBranch: string | undefined,
 ): string | null {
-  const visible = (visibleBranches ?? []).filter((branch) => /^[A-Z]{2}$/.test(branch));
-  if (!requiresExplicitBranch || visible.length <= 1) return null;
-  if (!requestedBranch) return '多省账号执行远程分析必须显式传 --targetBranch=<省代码>';
-  if (requestedBranch === 'ALL') return null;
+  if (!requiresExplicitBranch && !requestedBranch) return null;
+  if (!scope || !Array.isArray(scope.visibleBranches)
+    || typeof scope.canSwitch !== 'boolean' || typeof scope.canAggregateAll !== 'boolean') {
+    return '身份响应缺少规范化 branchScope，无法安全判断分公司范围；请升级服务端';
+  }
+  const visible = scope.visibleBranches;
+  if (visible.length === 0 || visible.some((branch) => !/^[A-Z]{2}$/.test(branch))) {
+    return 'branchScope.visibleBranches 为空或包含非法省代码，已拒绝分析';
+  }
+  if (scope.canSwitch && visible.length <= 1) {
+    return 'branchScope 声明可切省但可见省不足两个，已拒绝分析';
+  }
+  if (scope.canSwitch && !requestedBranch) {
+    return '多省账号执行远程分析必须显式传 --targetBranch=<省代码>';
+  }
+  if (!requestedBranch) return null;
+  if (requestedBranch === 'ALL') {
+    return scope.canAggregateAll && visible.length > 1
+      ? null
+      : '当前账号没有分公司合并视图权限，不能使用 targetBranch=ALL';
+  }
   if (!visible.includes(requestedBranch)) {
     return `targetBranch=${requestedBranch} 不在当前可切换范围（${visible.join(', ')}）`;
   }
   return null;
 }
 
+export function needsBranchScope(
+  capability: Pick<AnalysisCapability, 'requiresExplicitBranchForMultiBranch'>,
+  params: Record<string, string>,
+): boolean {
+  return capability.requiresExplicitBranchForMultiBranch || Boolean(params.targetBranch?.trim());
+}
+
 export async function fetchAnalysisCapabilities(): Promise<AnalysisCapability[]> {
-  const response = await cxGet<CapabilitiesResponse>('/api/discover/analysis-capabilities');
+  const raw = await cxGet<unknown>('/api/discover/analysis-capabilities');
+  const response = decodeCapabilitiesResponse(raw);
   return response.data.capabilities;
 }
 
@@ -103,15 +180,17 @@ export async function analyzeCommand(
       process.exit(EXIT.USAGE);
     }
 
-    const scope = await cxGet<ScopeResponse>('/api/auth/me');
-    const branchIssue = validateBranchSelection(
-      capability.requiresExplicitBranchForMultiBranch,
-      scope.data.visibleBranches,
-      opts.params.targetBranch?.trim(),
-    );
-    if (branchIssue) {
-      process.stderr.write(kleur.red(`✘ ${branchIssue}`) + '\n');
-      process.exit(EXIT.USAGE);
+    if (needsBranchScope(capability, opts.params)) {
+      const scope = await cxGet<ScopeResponse>('/api/auth/me');
+      const branchIssue = validateBranchSelection(
+        capability.requiresExplicitBranchForMultiBranch,
+        scope.data.branchScope,
+        opts.params.targetBranch?.trim(),
+      );
+      if (branchIssue) {
+        process.stderr.write(kleur.red(`✘ ${branchIssue}`) + '\n');
+        process.exit(EXIT.USAGE);
+      }
     }
 
     const response = await cxGet<{ success: boolean; data: unknown }>(capability.fullPath, {
