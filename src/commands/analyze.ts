@@ -16,8 +16,22 @@ export interface AnalysisCapability {
   path: string;
   fullPath: string;
   requiredParams: string[];
+  allowedParams: string[];
   requiresExplicitBranchForMultiBranch: boolean;
   domain: string;
+}
+
+export function validateAnalysisParams(
+  capability: AnalysisCapability,
+  params: Record<string, string>,
+): string | null {
+  if (!Array.isArray(capability.allowedParams) || capability.allowedParams.length === 0) {
+    return `能力目录缺少 ${capability.id} 的 allowedParams 契约，请升级服务端`;
+  }
+  const allowed = new Set(capability.allowedParams);
+  const unsupported = Object.keys(params).filter((param) => !allowed.has(param));
+  if (unsupported.length === 0) return null;
+  return `${capability.name} 不支持参数: ${unsupported.join(', ')}；允许参数: ${capability.allowedParams.join(', ')}`;
 }
 
 interface CapabilitiesResponse {
@@ -80,6 +94,12 @@ export async function analyzeCommand(
     const missing = capability.requiredParams.filter((param) => !opts.params[param]?.trim());
     if (missing.length > 0) {
       process.stderr.write(kleur.red(`✘ ${capability.name} 缺少必填参数: ${missing.join(', ')}`) + '\n');
+      process.exit(EXIT.USAGE);
+    }
+
+    const paramIssue = validateAnalysisParams(capability, opts.params);
+    if (paramIssue) {
+      process.stderr.write(kleur.red(`✘ ${paramIssue}`) + '\n');
       process.exit(EXIT.USAGE);
     }
 

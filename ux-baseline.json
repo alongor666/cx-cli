@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-07-22T06:52:10.731Z",
+  "measured_at": "2026-07-22T07:19:52.072Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {

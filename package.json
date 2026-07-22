@@ -1,6 +1,6 @@
 {
   "name": "@chexian/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "chexian-api 只读 CLI（PAT 鉴权，cx query/login/whoami）",
   "type": "module",
   "main": "dist/index.js",
