@@ -25,12 +25,16 @@ interface RequestOpts {
   signal?: AbortSignal;
   /** 单次请求超时（毫秒）。未设置时不限时（沿用网络层默认）。 */
   timeoutMs?: number;
+  /** 请求服务端返回与本次查询结果同一 cache/data epoch 的证据快照。 */
+  analysisEvidence?: boolean;
 }
 
 export interface CxResponse<T> {
   data: T;
   /** 服务端审计中间件返回的 X-Request-Id，可用于关联 PM2/SQL 日志。 */
   requestId: string | null;
+  /** base64url 编码的服务端原子证据快照；仅 analysisEvidence 请求返回。 */
+  analysisEvidence: string | null;
 }
 
 /** --verbose 时由 index.ts 置 true：stderr 打印请求 URL 与耗时 */
@@ -66,7 +70,7 @@ export async function cxGetWithMeta<T = unknown>(
 
   const startedAt = Date.now();
   try {
-    return await doRequest<T>(url, cfg.token, signal);
+    return await doRequest<T>(url, cfg.token, signal, 1, Boolean(opts.analysisEvidence));
   } finally {
     if (apiDebug.verbose) {
       console.error(kleur.gray(`→ GET ${url} (${Date.now() - startedAt}ms)`));
@@ -79,13 +83,18 @@ async function doRequest<T>(
   token: string,
   signal?: AbortSignal,
   attempt = 1,
+  analysisEvidence = false,
 ): Promise<CxResponse<T>> {
   const maxAttempts = 4;
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        ...(analysisEvidence ? { 'X-Cx-Analysis-Evidence': '2' } : {}),
+      },
       signal,
     });
   } catch (err) {
@@ -95,7 +104,7 @@ async function doRequest<T>(
     }
     if (attempt < maxAttempts) {
       await sleep(2 ** (attempt - 1) * 500);
-      return doRequest<T>(url, token, signal, attempt + 1);
+      return doRequest<T>(url, token, signal, attempt + 1, analysisEvidence);
     }
     throw new CxApiError(0, `Network error: ${(err as Error).message}`);
   }
@@ -114,13 +123,13 @@ async function doRequest<T>(
     if (attempt === 1 && capped <= 5) {
       console.error(kleur.yellow(`Rate limited, retrying in ${capped}s...`));
       await sleep(capped * 1000);
-      return doRequest<T>(url, token, signal, attempt + 1);
+      return doRequest<T>(url, token, signal, attempt + 1, analysisEvidence);
     }
     throw new CxApiError(429, `Rate limited (Retry-After ${retryAfter}s)`, retryAfter);
   }
   if (res.status >= 500 && attempt < maxAttempts) {
     await sleep(2 ** (attempt - 1) * 1000);
-    return doRequest<T>(url, token, signal, attempt + 1);
+    return doRequest<T>(url, token, signal, attempt + 1, analysisEvidence);
   }
   if (!res.ok) {
     const body = await safeJson(res);
@@ -130,6 +139,7 @@ async function doRequest<T>(
   return {
     data: (await res.json()) as T,
     requestId: res.headers.get('X-Request-Id'),
+    analysisEvidence: res.headers.get('X-Cx-Analysis-Evidence'),
   };
 }
 

@@ -10,7 +10,6 @@ import { cxGet, cxGetWithMeta } from '../api.js';
 import { EXIT, failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
 import { loadConfig } from '../config.js';
-import { toWhoamiMachineView } from './whoami.js';
 import pkg from '../../package.json' with { type: 'json' };
 
 export interface AnalysisParameter {
@@ -165,7 +164,68 @@ function canonicalize(value: unknown): unknown {
 }
 
 export function sha256Canonical(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)) ?? 'null')
+    .digest('hex');
+}
+
+interface AnalysisEvidenceSnapshot {
+  schemaVersion: 1;
+  requestId: string;
+  releaseSha: string;
+  builtAt: string | null;
+  dataVersion: string;
+  dataGeneration: number;
+  effectiveBranch: string | null;
+  identity: {
+    role: string;
+    authKind: 'pat' | 'jwt';
+  };
+  branchScope: BranchScope;
+  permissionScopeSha256: string;
+  routeCacheKeySha256: string;
+  resultSha256: string;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
+
+export function decodeAnalysisEvidenceSnapshot(encoded: string | null): AnalysisEvidenceSnapshot {
+  if (!encoded) throw new Error('分析响应缺少 X-Cx-Analysis-Evidence，无法形成原子证据快照');
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('分析响应的 X-Cx-Analysis-Evidence 编码无效');
+  }
+  if (!isRecord(value)) throw new Error('分析响应的证据快照形态无效');
+  const identity = value.identity;
+  const branchScope = value.branchScope;
+  const validNullableString = (candidate: unknown) => candidate === null || typeof candidate === 'string';
+  const validBranchScope = isRecord(branchScope)
+    && (branchScope.defaultBranch === undefined || typeof branchScope.defaultBranch === 'string')
+    && isStringArray(branchScope.visibleBranches)
+    && typeof branchScope.canSwitch === 'boolean'
+    && typeof branchScope.canAggregateAll === 'boolean';
+  const validIdentity = isRecord(identity)
+    && typeof identity.role === 'string'
+    && (identity.authKind === 'pat' || identity.authKind === 'jwt');
+  if (value.schemaVersion !== 1
+    || typeof value.requestId !== 'string' || value.requestId.length === 0
+    || typeof value.releaseSha !== 'string' || !/^(dev|[a-f0-9]{7,40})$/i.test(value.releaseSha)
+    || !validNullableString(value.builtAt)
+    || typeof value.dataVersion !== 'string' || value.dataVersion.length === 0
+    || !Number.isSafeInteger(value.dataGeneration) || Number(value.dataGeneration) < 0
+    || Number(value.dataGeneration) % 2 !== 0
+    || !validNullableString(value.effectiveBranch)
+    || !validIdentity || !validBranchScope
+    || !isSha256(value.permissionScopeSha256)
+    || !isSha256(value.routeCacheKeySha256)
+    || !isSha256(value.resultSha256)) {
+    throw new Error('分析响应的证据快照字段无效');
+  }
+  return value as unknown as AnalysisEvidenceSnapshot;
 }
 
 function versionTuple(value: string): [number, number, number] | null {
@@ -338,25 +398,49 @@ export async function analyzeCommand(
       return;
     }
 
-    const [dataResponse, versionResponse, health] = await Promise.all([
-      cxGetWithMeta<{ success: boolean; data: unknown }>(capability.fullPath, requestOptions),
-      cxGet<{ success: boolean; data: Record<string, unknown> }>('/api/data/version'),
-      cxGet<Record<string, unknown>>('/health'),
-    ]);
+    const dataResponse = await cxGetWithMeta<{ success: boolean; data: unknown }>(
+      capability.fullPath,
+      { ...requestOptions, analysisEvidence: true },
+    );
     if (!dataResponse.requestId) {
       throw new Error('分析响应缺少 X-Request-Id，无法形成可追踪证据链');
+    }
+    const snapshot = decodeAnalysisEvidenceSnapshot(dataResponse.analysisEvidence);
+    if (snapshot.requestId !== dataResponse.requestId) {
+      throw new Error('分析响应 requestId 与服务端证据快照不一致');
     }
     const response = dataResponse.data;
     const resultIssue = validateAnalysisResult(capability.resultSchema, response.data);
     if (resultIssue) throw new Error(`分析结果不符合目录契约：${resultIssue}`);
+    const resultSha256 = sha256Canonical(response.data);
+    if (snapshot.resultSha256 !== resultSha256) {
+      throw new Error('分析结果与服务端证据快照摘要不一致');
+    }
     const cfg = loadConfig();
-    const branchScope = scope?.data.branchScope;
     const requestedBranch = opts.params.targetBranch?.trim();
+    if (requestedBranch && snapshot.effectiveBranch !== requestedBranch) {
+      throw new Error(
+        `服务端实际分析范围 ${snapshot.effectiveBranch ?? '(none)'} 与请求 ${requestedBranch} 不一致，已拒绝证据`,
+      );
+    }
+    const provenance = {
+      requestId: snapshot.requestId,
+      releaseSha: snapshot.releaseSha,
+      builtAt: snapshot.builtAt,
+      dataVersion: snapshot.dataVersion,
+      dataGeneration: snapshot.dataGeneration,
+      effectiveBranch: snapshot.effectiveBranch,
+      identity: snapshot.identity,
+      branchScope: snapshot.branchScope,
+      permissionScopeSha256: snapshot.permissionScopeSha256,
+      routeCacheKeySha256: snapshot.routeCacheKeySha256,
+      resultSha256: snapshot.resultSha256,
+    };
     const evidence = {
       schemaVersion: 2,
       source: 'remote',
       generatedAt: new Date().toISOString(),
-      requestId: dataResponse.requestId,
+      requestId: snapshot.requestId,
       cliVersion: pkg.version,
       capabilityCatalog: {
         version: catalog.version,
@@ -378,22 +462,20 @@ export async function analyzeCommand(
         requested: opts.params,
         effective: effectiveParams,
       },
-      effectiveBranch: requestedBranch
-        || branchScope?.defaultBranch
-        || scope?.data.branchCode
-        || null,
-      branchScope: branchScope ?? null,
-      identity: scope
-        ? toWhoamiMachineView(scope.data, cfg.tokenId ?? null, cfg.baseUrl)
-        : null,
-      health: {
-        success: health.success,
-        message: health.message,
-        releaseSha: health.releaseSha,
-        builtAt: health.builtAt,
-        timestamp: health.timestamp,
+      effectiveBranch: snapshot.effectiveBranch,
+      branchScope: snapshot.branchScope,
+      identity: {
+        ...snapshot.identity,
+        visibleBranches: snapshot.branchScope.visibleBranches,
+        tokenType: snapshot.identity.authKind,
+        baseUrl: cfg.baseUrl,
       },
-      dataVersion: versionResponse.data,
+      health: {
+        releaseSha: snapshot.releaseSha,
+        builtAt: snapshot.builtAt,
+      },
+      dataVersion: { contentVersion: snapshot.dataVersion },
+      provenance,
       fingerprints: {
         algorithm: 'sha256',
         parameters: sha256Canonical(effectiveParams),
@@ -401,13 +483,11 @@ export async function analyzeCommand(
           capabilityId: capability.id,
           path: capability.fullPath,
           catalogVersion: catalog.version,
-          effectiveBranch: requestedBranch
-            || branchScope?.defaultBranch
-            || scope?.data.branchCode
-            || null,
+          provenance,
           parameters: effectiveParams,
         }),
-        result: sha256Canonical(response.data),
+        provenance: sha256Canonical(provenance),
+        result: resultSha256,
       },
       data: response.data,
     };

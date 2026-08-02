@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ cxGet: vi.fn(), cxGetWithMeta: vi.fn() }));
-vi.mock('../api.js', () => ({ cxGet: mocks.cxGet, cxGetWithMeta: mocks.cxGetWithMeta }));
+vi.mock('../api.js', () => ({
+  cxGet: mocks.cxGet,
+  cxGetWithMeta: mocks.cxGetWithMeta,
+  CxApiError: class CxApiError extends Error {
+    constructor(public status: number, message: string) { super(message); }
+  },
+}));
 vi.mock('../config.js', () => ({
   loadConfig: () => ({ baseUrl: 'https://example.test', tokenId: 'pat-test' }),
 }));
 
 import {
   analyzeCommand,
+  decodeAnalysisEvidenceSnapshot,
   fetchAnalysisCapabilities,
   decodeCapabilitiesResponse,
   needsBranchScope,
@@ -49,6 +56,25 @@ const catalog = {
 const multiScope = {
   defaultBranch: 'SC', visibleBranches: ['SC', 'SX'], canSwitch: true, canAggregateAll: true,
 };
+
+function encodeEvidenceSnapshot(overrides: Record<string, unknown> = {}): string {
+  const result = [{ time_period: '2026-W01', premium: 1 }];
+  return Buffer.from(JSON.stringify({
+    schemaVersion: 1,
+    requestId: 'request-123',
+    releaseSha: 'abc1234',
+    builtAt: '2026-07-22T00:00:00.000Z',
+    dataVersion: 'data0001',
+    dataGeneration: 8,
+    effectiveBranch: 'SX',
+    identity: { role: 'branch_admin', authKind: 'pat' },
+    branchScope: multiScope,
+    permissionScopeSha256: 'a'.repeat(64),
+    routeCacheKeySha256: 'b'.repeat(64),
+    resultSha256: sha256Canonical(result),
+    ...overrides,
+  }), 'utf8').toString('base64url');
+}
 
 describe('cx analyze', () => {
   it('多省分析缺省或无权切省时 fail-closed，禁止回落默认省', () => {
@@ -149,19 +175,11 @@ describe('cx analyze', () => {
           username: 'tester', displayName: '测试员', role: 'branch_admin',
           branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope,
         },
-      })
-      .mockResolvedValueOnce({
-        success: true,
-        data: { etlDate: '2026-07-21', contentVersion: 'data0001' },
-      })
-      .mockResolvedValueOnce({
-        success: true, message: 'Server is running', releaseSha: 'abc1234',
-        builtAt: '2026-07-22T00:00:00.000Z', timestamp: '2026-07-22T01:00:00.000Z',
-        pool: { shouldNotLeak: true },
       });
     mocks.cxGetWithMeta.mockResolvedValueOnce({
       data: { success: true, data: [{ time_period: '2026-W01', premium: 1 }] },
       requestId: 'request-123',
+      analysisEvidence: encodeEvidenceSnapshot(),
     });
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
@@ -183,17 +201,97 @@ describe('cx analyze', () => {
       },
       effectiveBranch: 'SX',
       branchScope: multiScope,
-      identity: { username: 'tester', tokenId: 'pat-test', baseUrl: 'https://example.test' },
+      identity: {
+        role: 'branch_admin', authKind: 'pat', tokenType: 'pat',
+        visibleBranches: ['SC', 'SX'], baseUrl: 'https://example.test',
+      },
       health: { releaseSha: 'abc1234' },
-      dataVersion: { etlDate: '2026-07-21', contentVersion: 'data0001' },
+      dataVersion: { contentVersion: 'data0001' },
+      provenance: {
+        requestId: 'request-123',
+        releaseSha: 'abc1234',
+        dataVersion: 'data0001',
+        dataGeneration: 8,
+        permissionScopeSha256: 'a'.repeat(64),
+        routeCacheKeySha256: 'b'.repeat(64),
+      },
       fingerprints: {
         algorithm: 'sha256',
         parameters: expect.stringMatching(/^[a-f0-9]{64}$/),
         request: expect.stringMatching(/^[a-f0-9]{64}$/),
+        provenance: expect.stringMatching(/^[a-f0-9]{64}$/),
         result: expect.stringMatching(/^[a-f0-9]{64}$/),
       },
       data: [{ time_period: '2026-W01', premium: 1 }],
     });
     expect(evidence.health).not.toHaveProperty('pool');
+    expect(mocks.cxGetWithMeta).toHaveBeenCalledWith('/api/query/trend', {
+      query: { startDate: '2026-01-01', endDate: '2026-01-31', targetBranch: 'SX' },
+      timeoutMs: undefined,
+      analysisEvidence: true,
+    });
+    expect(mocks.cxGet.mock.calls.map(([path]) => path)).not.toContain('/api/data/version');
+    expect(mocks.cxGet.mock.calls.map(([path]) => path)).not.toContain('/health');
+  });
+
+  it('证据响应缺失或篡改结果摘要时 fail-closed', async () => {
+    expect(() => decodeAnalysisEvidenceSnapshot(null)).toThrow(/缺少/);
+    expect(() => decodeAnalysisEvidenceSnapshot('not-base64-json')).toThrow(/编码无效/);
+    expect(() => decodeAnalysisEvidenceSnapshot(encodeEvidenceSnapshot({ dataGeneration: undefined })))
+      .toThrow(/字段无效/);
+    expect(() => decodeAnalysisEvidenceSnapshot(encodeEvidenceSnapshot({ dataGeneration: 9 })))
+      .toThrow(/字段无效/);
+
+    mocks.cxGet
+      .mockResolvedValueOnce(catalog)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          username: 'tester', displayName: '测试员', role: 'branch_admin',
+          branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope,
+        },
+      });
+    mocks.cxGetWithMeta.mockResolvedValueOnce({
+      data: { success: true, data: [{ time_period: '2026-W01', premium: 1 }] },
+      requestId: 'request-123',
+      analysisEvidence: encodeEvidenceSnapshot({ resultSha256: 'c'.repeat(64) }),
+    });
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await analyzeCommand('operating-trend', {
+      evidence: true,
+      params: { startDate: '2026-01-01', endDate: '2026-01-31', targetBranch: 'SX' },
+    });
+
+    expect(exit).toHaveBeenCalled();
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('摘要不一致'));
+  });
+
+  it('服务端实际切省与请求范围不一致时 fail-closed', async () => {
+    mocks.cxGet
+      .mockResolvedValueOnce(catalog)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          username: 'tester', displayName: '测试员', role: 'branch_admin',
+          branchCode: 'SC', visibleBranches: ['SC', 'SX'], branchScope: multiScope,
+        },
+      });
+    mocks.cxGetWithMeta.mockResolvedValueOnce({
+      data: { success: true, data: [{ time_period: '2026-W01', premium: 1 }] },
+      requestId: 'request-123',
+      analysisEvidence: encodeEvidenceSnapshot({ effectiveBranch: 'SC' }),
+    });
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    await analyzeCommand('operating-trend', {
+      evidence: true,
+      params: { startDate: '2026-01-01', endDate: '2026-01-31', targetBranch: 'SX' },
+    });
+
+    expect(exit).toHaveBeenCalled();
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('实际分析范围 SC'));
   });
 });
