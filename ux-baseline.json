@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-07-22T13:04:29.956Z",
+  "measured_at": "2026-08-03T01:06:50.121Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -125,7 +125,7 @@
           ],
           "doc": "metrics 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal|sales_team）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
+          "stdout": "Usage: cx metrics [options]\n\n列出指标注册表。--category 按分类过滤。\n\nOptions:\n  --category <cat>    指标分类（foundation|ratio|cost|cross_sell|growth|repair|plan|structure|renewal|sales_team|network_outlet）\n  -f, --format <fmt>  输出格式 table|json|csv\n  -h, --help          display help for command",
           "stderr": ""
         },
         "help-describe": {
