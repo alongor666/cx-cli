@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+// cliVersion 断言从 package.json 派生，避免每次升版本号都要改测试。
+// 注意区分：minCliVersion 是服务端能力目录的契约字段，来自 mock 响应，与本包版本无关。
+import pkg from '../../package.json' with { type: 'json' };
 
 const mocks = vi.hoisted(() => ({ cxGet: vi.fn(), cxGetWithMeta: vi.fn() }));
 vi.mock('../api.js', () => ({
@@ -193,7 +196,7 @@ describe('cx analyze', () => {
       schemaVersion: 2,
       source: 'remote',
       requestId: 'request-123',
-      cliVersion: '1.3.0',
+      cliVersion: pkg.version,
       capabilityCatalog: { version: 5, minCliVersion: '1.3.0' },
       capability: {
         id: 'operating-trend', timeWindow: 'window',

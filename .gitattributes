@@ -1,0 +1,10 @@
+# 跨平台换行符规范化。
+#
+# 为什么需要：dist/index.js 由 tsc 从 src/*.ts 生成，首行是 #!/usr/bin/env node。
+# 若 Windows 贡献者在 core.autocrlf=true 下把源码检出成 CRLF，编译产物首行会变成
+# "#!/usr/bin/env node\r"，该包在 macOS / Linux 上执行时报
+# "env: node\r: No such file or directory"。
+#
+# 实际风险等级：低——npm 发布只在 CI（ubuntu）的全新 checkout 上进行，本机换行符不会渗入。
+# 这是廉价保险，不是修复当前已存在的缺陷。
+* text=auto eol=lf

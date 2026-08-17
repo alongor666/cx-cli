@@ -2,21 +2,47 @@
 
 chexian-api 只读命令行客户端。PAT（个人访问令牌）鉴权，权限完全继承令牌关联用户（数据范围 / 可访问路由），服务端架构层强制只读（任何 POST/PUT/DELETE 一律 403）。
 
-## 安装与登录
+## 安装
+
+两条分发通道，按机器上有没有 Node 选：
+
+| 方式 | 命令 | 前提 | 适用 |
+|---|---|---|---|
+| **npm 包** | `npm install -g @chexian/cli` | Node ≥ 22 | 已在 Node 生态里；体积约 100KB，随 npm 一起升级 |
+| **预编译二进制** | 从 [Releases](https://github.com/alongor666/cx-cli/releases) 下载对应平台文件 | 无 | 机器上没有 Node；单文件自包含（60–94MB），覆盖 macOS / Linux / Windows 的 x64 与 arm64 |
+
+二进制随附 `SHA256SUMS`，安装前建议校验：
 
 ```bash
-# 仓库内开发运行
+shasum -a 256 -c SHA256SUMS --ignore-missing         # macOS / Linux
+```
+
+```powershell
+Get-FileHash .\cx-windows-x64.exe -Algorithm SHA256  # Windows，与 SHA256SUMS 比对
+```
+
+Node 版本下限为 22，因为源码使用 `import ... with { type: 'json' }`（import attributes），该语法在 Node 22 才转正；Node 20 及更早会直接报语法错误。
+
+## 登录
+
+```bash
+cx login                     # 交互式输入 PAT（或 --token cx_pat_xxx.yyy）
+cx whoami                    # 验证身份与数据范围
+```
+
+PAT 在 Web 端「设置 → 访问令牌」生成。配置存放位置：macOS / Linux 为 `~/.chexian/config.json`，Windows 为 `%USERPROFILE%\.chexian\config.json`。
+
+> **Windows 用户请注意**：写配置时代码指定了 `0o600` 权限（仅属主可读），用于防止同机其他用户读到 PAT。**该保护在 Windows 上不生效**——NTFS 不映射 POSIX 权限位，Node 会静默忽略该参数（不报错），文件将继承所在目录的默认 ACL。若该机器存在其他登录用户，请改用环境变量 `CX_PAT` 不落盘，或自行用 `icacls` 收紧该文件权限。
+
+## 仓库内开发运行
+
+```bash
 cd cli && bun install
 bunx tsx src/index.ts --help
 
 # 构建后以 cx 运行
 bun run build && bun link
-
-cx login                     # 交互式输入 PAT（或 --token cx_pat_xxx.yyy）
-cx whoami                    # 验证身份与数据范围
 ```
-
-PAT 在 Web 端「设置 → 访问令牌」生成。配置存 `~/.chexian/config.json`（chmod 600）。
 
 ## 命令总览
 
