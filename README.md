@@ -127,7 +127,7 @@ CX_BASE_URL=http://localhost:3000 CX_PAT=cx_pat_xxx.yyy cx query KPI
 ## 能力边界（设计约束）
 
 - **只读**：服务端 `readonlyMiddleware` 架构层拦截，CLI 无任何写操作
-- **AI 问答（NL2SQL）与 PAT 自助管理**：需要会话登录，请使用 Web 端
+- **PAT 自助管理**：需要会话登录，请使用 Web 端（NL2SQL 已按 CX-ADR-020 冻结，见 `docs/decisions/20260903-ai-native-os-mainline.md`）
 - 路由能力由服务端 `route-catalog` 唯一事实源驱动，服务端新增查询路由后 CLI 自动可用：`cx query <新路由>` 在本地缓存未命中时会自动强制刷新缓存重试一次（无需手动 `cx routes --refresh`，缓存 TTL 24h）
 
 详见 `开发文档/PAT_GUIDE.md`。
