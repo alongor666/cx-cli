@@ -4,7 +4,7 @@
  * <key|path> 三种形态：
  *   1) route-catalog 的 key（如 KPI / claims-detail-heatmap，大小写与连字符宽容）
  *   2) catalog 登记的 path（如 /kpi）
- *   3) 任意 / 开头的 path 直通（如 /repair/overview，不依赖 catalog）
+ *   3) 任意 / 开头的 path 直通（如 /repair/city，不依赖 catalog）
  */
 import kleur from 'kleur';
 import { cxGet } from '../api.js';

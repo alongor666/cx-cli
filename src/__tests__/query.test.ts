@@ -65,7 +65,7 @@ describe('resolveTarget', () => {
   });
 
   it('catalog 未登记的 / 开头 path 直通拼接', () => {
-    expect(resolveTarget('/repair/overview', routes)?.fullPath).toBe('/api/query/repair/overview');
+    expect(resolveTarget('/repair/city', routes)?.fullPath).toBe('/api/query/repair/city');
   });
 
   it('非 path 且 catalog 无匹配 → null', () => {
@@ -110,8 +110,8 @@ describe('resolveWithRefresh（缓存未命中自动刷新）', () => {
 
   it('/ 开头 path 直通永远命中 → 不触发刷新', async () => {
     const fetch = vi.fn().mockResolvedValue(staleRoutes);
-    const { route, refreshed } = await resolveWithRefresh('/repair/overview', fetch);
-    expect(route?.fullPath).toBe('/api/query/repair/overview');
+    const { route, refreshed } = await resolveWithRefresh('/repair/city', fetch);
+    expect(route?.fullPath).toBe('/api/query/repair/city');
     expect(refreshed).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
   });

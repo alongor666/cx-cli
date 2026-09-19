@@ -59,7 +59,7 @@ program
   $ cx login                          保存 PAT
   $ cx routes --search 赔案           按关键词找路由
   $ cx query KPI --year=2026          调用 KPI 查询
-  $ cx query /repair/overview         path 直通调用
+  $ cx query /repair/city             path 直通调用
   $ echo "SELECT ..." | cx sql -      stdin 管道 SQL
   $ cx health                         连通性诊断
 
