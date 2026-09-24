@@ -35,12 +35,23 @@ export async function sqlCommand(query: string, opts: Opts): Promise<void> {
       console.error(kleur.red('✘ Missing SQL query. Usage: cx sql "<query>" 或 echo "<query>" | cx sql -'));
       process.exit(EXIT.USAGE);
     }
-    const resp = await cxGet<{ success: boolean; data: unknown }>('/api/query/sql', {
+    const resp = await cxGet<{
+      success: boolean;
+      data: unknown;
+      meta?: { truncated?: boolean; returnedRows?: number; rowCount?: number; truncationReason?: string };
+    }>('/api/query/sql', {
       query: { sql },
       timeoutMs: opts.timeoutMs,
     });
     const fmt: OutputFormat = opts.format ?? (process.stdout.isTTY ? 'table' : 'json');
     console.log(renderOutput(resp.data, fmt));
+    // 服务端结果双限（CX-ADR-e1212b PR-A3b）：截断必须响亮提示，否则用户管道拿到 ≤N 行
+    // 却以为拿到了全量（评审 P1-3——cx sql 是该端点唯一仓内消费方，不读 meta 即静默）
+    if (resp.meta?.truncated) {
+      console.error(
+        `⚠ 结果被服务端截断：返回 ${resp.meta.returnedRows} 行（命中 ≥${resp.meta.rowCount}，原因=${resp.meta.truncationReason}）。如需全量请加聚合或收窄过滤`,
+      );
+    }
   } catch (err) {
     failWith(err);
   }
