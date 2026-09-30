@@ -6,7 +6,7 @@ import fs from 'fs';
 import kleur from 'kleur';
 import Table from 'cli-table3';
 import { cxGet } from '../api.js';
-import { getCachePath } from '../config.js';
+import { getCachePath, writeFileAtomic } from '../config.js';
 import { failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
 import { note } from '../cli-state.js';
@@ -99,23 +99,47 @@ interface CatalogResp { success: boolean; data: { version: number; routes: Route
 const CACHE_TTL_MS = 24 * 3600 * 1000;
 const CACHE_FILE = 'catalog.json';
 
-export async function fetchCatalog(forceRefresh = false): Promise<RouteMeta[]> {
-  const cachePath = getCachePath(CACHE_FILE);
-  if (!forceRefresh && fs.existsSync(cachePath)) {
-    const stat = fs.statSync(cachePath);
-    if (Date.now() - stat.mtimeMs < CACHE_TTL_MS) {
-      try {
-        const raw = fs.readFileSync(cachePath, 'utf-8');
-        const cached = JSON.parse(raw) as { routes: RouteMeta[] };
-        if (Array.isArray(cached.routes) && cached.routes.length > 0) return cached.routes;
-      } catch {
-        // 缓存损坏，继续拉远端
-      }
+/**
+ * 读本地 route-catalog 缓存（不看 TTL）。缺失/损坏/空返回 null。
+ * 缓存里是服务端原样下发的路由对象，MCP 启动失败时也用它兜底。
+ */
+export function readCatalogCache(): { routes: RouteMeta[]; ageMs: number } | null {
+  try {
+    const cachePath = getCachePath(CACHE_FILE);
+    const ageMs = Date.now() - fs.statSync(cachePath).mtimeMs;
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8')) as { routes?: unknown };
+    if (Array.isArray(cached.routes) && cached.routes.length > 0) {
+      return { routes: cached.routes as RouteMeta[], ageMs };
     }
+  } catch {
+    // 缓存缺失或损坏
   }
-  const resp = await cxGet<CatalogResp>('/api/auth/route-catalog');
-  fs.writeFileSync(cachePath, JSON.stringify({ routes: resp.data.routes }, null, 2), { mode: 0o600 });
-  return resp.data.routes;
+  return null;
+}
+
+export async function fetchCatalog(forceRefresh = false): Promise<RouteMeta[]> {
+  const cached = readCatalogCache();
+  if (!forceRefresh && cached && cached.ageMs < CACHE_TTL_MS) return cached.routes;
+
+  let routes: RouteMeta[];
+  try {
+    const resp = await cxGet<CatalogResp>('/api/auth/route-catalog');
+    const fetched = resp?.data?.routes;
+    if (!Array.isArray(fetched)) {
+      throw new Error('route-catalog 响应形状异常：缺 data.routes 数组（服务端版本不兼容？）');
+    }
+    routes = fetched;
+  } catch (err) {
+    // 网络/5xx 时用过期缓存兜底，但鉴权/权限错误必须如实上抛（否则会拿旧目录掩盖令牌失效）
+    const status = (err as { status?: number }).status;
+    if (cached && status !== 401 && status !== 403) {
+      note(kleur.yellow(`⚠ route-catalog 拉取失败（${(err as Error).message}），改用 ${Math.round(cached.ageMs / 3600_000)}h 前的本地缓存`));
+      return cached.routes;
+    }
+    throw err;
+  }
+  writeFileAtomic(getCachePath(CACHE_FILE), JSON.stringify({ routes }, null, 2));
+  return routes;
 }
 
 /** --search 关键词过滤：匹配 key/path/summary/description（大小写不敏感） */

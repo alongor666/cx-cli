@@ -17,10 +17,11 @@ const mocks = vi.hoisted(() => ({
   note: vi.fn(),
   existsSync: vi.fn(() => false),
   writeFileSync: vi.fn(),
+  writeFileAtomic: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
-vi.mock('../config.js', () => ({ getCachePath: mocks.getCachePath }));
+vi.mock('../config.js', () => ({ getCachePath: mocks.getCachePath, writeFileAtomic: mocks.writeFileAtomic }));
 vi.mock('../exit-codes.js', () => ({ failWith: mocks.failWith }));
 vi.mock('../cli-state.js', () => ({ note: mocks.note }));
 vi.mock('fs', () => ({

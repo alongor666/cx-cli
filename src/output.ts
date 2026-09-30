@@ -30,7 +30,7 @@ function extractRows(data: unknown): Record<string, unknown>[] | null {
   if (Array.isArray(data)) return data as Record<string, unknown>[];
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
-  // 优先 .data.rows / .data，其次顶层 .rows
+  // 顺序：顶层 .rows → .data（数组）→ .data.rows
   if (Array.isArray(d.rows)) return d.rows as Record<string, unknown>[];
   if (d.data && typeof d.data === 'object') {
     const inner = d.data as Record<string, unknown>;
@@ -70,11 +70,27 @@ function toTable(rows: Record<string, unknown>[]): string {
 
 function toCsv(rows: Record<string, unknown>[]): string {
   const headers = collectHeaders(rows);
-  const lines: string[] = [headers.map(csvEscape).join(',')];
+  const lines: string[] = [headers.map((h) => csvEscape(neutralizeFormula(h))).join(',')];
   for (const r of rows) {
-    lines.push(headers.map((h) => csvEscape(formatCell(r[h]))).join(','));
+    lines.push(headers.map((h) => {
+      const v = r[h];
+      const cell = formatCell(v);
+      return csvEscape(typeof v === 'string' ? neutralizeFormula(cell) : cell);
+    }).join(','));
   }
   return lines.join('\n');
+}
+
+/**
+ * CSV 公式注入防护（OWASP）：以 = + - @ Tab CR 开头的文本单元格在 Excel/WPS 中会被当公式执行
+ * （如 =HYPERLINK(...) 外带数据）。只处理字符串单元格，数值列不受影响。
+ * + / - 开头但只含数字、空格、. , % 与指数的文本（"-3.2%" "-1,234" "+86 138"）没有函数/引用，
+ * 构不成注入，原样保留——CSV 也是 Agent / pandas 的机器输入，不能为防护篡改业务值。
+ */
+export function neutralizeFormula(cell: string): string {
+  if (/^[=@\t\r]/.test(cell)) return `'${cell}`;
+  if (/^[+-]/.test(cell) && !/^[+-][\d.,% ]*([eE][+-]?\d+)?$/.test(cell)) return `'${cell}`;
+  return cell;
 }
 
 function collectHeaders(rows: Record<string, unknown>[]): string[] {
@@ -91,6 +107,6 @@ function formatCell(v: unknown): string {
 }
 
 function csvEscape(v: string): string {
-  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  if (/[",\r\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
   return v;
 }

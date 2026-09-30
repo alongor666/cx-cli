@@ -5,7 +5,7 @@
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpConfig } from './api.js';
-import type { DiscoveryToolBinding, RouteMeta } from './build-tools.js';
+import { toolNameForRoute, type DiscoveryToolBinding, type RouteMeta } from './build-tools.js';
 import { applyPathParams } from '../path-params.js';
 import { formatResult } from './format-result.js';
 
@@ -25,26 +25,71 @@ export type ToolResult = CallToolResult;
 const textResult = (text: string, isError = false): ToolResult =>
   (isError ? { isError: true, content: [{ type: 'text', text }] } : { content: [{ type: 'text', text }] });
 
+/** 数据块保持纯 JSON（content[0]），提示单独成块追加在后，避免破坏解析 */
+const dataResult = (text: string, warning: string): ToolResult => ({
+  content: warning
+    ? [{ type: 'text', text }, { type: 'text', text: warning }]
+    : [{ type: 'text', text }],
+});
+
+/**
+ * 参数只允许标量：对象/数组经 String() 会变成 "[object Object]" / "a,b" 静默发出去，
+ * 服务端按默认值查询，LLM 拿到的是看似正常的错误答案。
+ */
+function checkArgs(rawArgs: unknown): { args: Args } | { error: string } {
+  if (rawArgs === undefined || rawArgs === null) return { args: {} };
+  if (typeof rawArgs !== 'object' || Array.isArray(rawArgs)) {
+    return { error: '工具参数必须是对象（键值对）' };
+  }
+  const bad = Object.entries(rawArgs as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined && v !== null && !['string', 'number', 'boolean'].includes(typeof v))
+    .map(([k]) => k);
+  if (bad.length > 0) {
+    return { error: `参数只接受字符串/数字/布尔值，以下参数类型不合法: ${bad.join(', ')}` };
+  }
+  return { args: rawArgs as Args };
+}
+
+/**
+ * 未声明参数不拒绝（CLI 同样透传 targetBranch 等通用参数，服务端契约以其自身为准），
+ * 但必须告诉 LLM：拼错的参数名会被服务端忽略、按默认口径返回，这是最隐蔽的错答来源。
+ */
+function undeclaredNote(args: Args, declared: Set<string>): string {
+  const unknown = Object.keys(args).filter((k) => !declared.has(k));
+  if (unknown.length === 0) return '';
+  const known = [...declared].join(', ') || '（无）';
+  return `⚠ 参数 ${unknown.join(', ')} 不在本工具声明的参数中，服务端可能忽略它们并按默认口径返回。声明的参数: ${known}`;
+}
+
+function pathParamNames(template: string): string[] {
+  return [...template.matchAll(/:([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]);
+}
+
 export function createCallToolHandler(deps: CallToolDeps) {
-  const routesByToolName = new Map(deps.routes.map((r) => [`cx_query_${r.key.toLowerCase()}`, r]));
+  const routesByToolName = new Map(deps.routes.map((r) => [toolNameForRoute(r.key), r]));
   const bindingsByToolName = new Map(deps.bindings.map((b) => [b.tool.name, b]));
 
   return async (toolName: string, rawArgs: unknown): Promise<ToolResult> => {
-    const args = (rawArgs ?? {}) as Args;
+    const checked = checkArgs(rawArgs);
+    if ('error' in checked) return textResult(checked.error, true);
+    const { args } = checked;
     try {
       const binding = bindingsByToolName.get(toolName);
       if (binding) {
+        const note = undeclaredNote(args, new Set(Object.keys(binding.tool.inputSchema.properties)));
         const body = await deps.get(deps.cfg, binding.endpoint, args);
         const shaped = binding.project
           ? binding.project((body as { data?: unknown } | null)?.data ?? body)
           : body;
-        return textResult(formatResult(shaped, deps.maxBytes).text);
+        return dataResult(formatResult(shaped, deps.maxBytes).text, note);
       }
       const route = routesByToolName.get(toolName);
       if (!route) return textResult(`Unknown tool: ${toolName}`, true);
+      const declared = new Set([...route.parameters.map((p) => p.name), ...pathParamNames(route.fullPath)]);
+      const note = undeclaredNote(args, declared);
       const { resolvedPath, restArgs } = applyPathParams(route.fullPath, args, () => '，作为工具参数传入');
       const body = await deps.get(deps.cfg, resolvedPath, restArgs);
-      return textResult(formatResult(body, deps.maxBytes).text);
+      return dataResult(formatResult(body, deps.maxBytes).text, note);
     } catch (err) {
       return textResult((err as Error).message, true);
     }

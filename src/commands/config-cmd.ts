@@ -6,7 +6,10 @@
  * token 不可经此命令读写（写入走 cx login，清除走 cx logout）。
  */
 import kleur from 'kleur';
-import { loadConfig, saveConfig, configFilePath, DEFAULT_BASE_URL } from '../config.js';
+import {
+  loadConfig, loadFileConfig, updateFileConfig, configFilePath, DEFAULT_BASE_URL,
+  normalizeBaseUrl, isInsecureBaseUrl,
+} from '../config.js';
 import { EXIT } from '../exit-codes.js';
 
 /** config 子命令的错误都是用法错误：stderr + exit 4 */
@@ -28,18 +31,10 @@ export function validateConfigKey(key: string): asserts key is EditableKey {
   }
 }
 
-export function validateConfigValue(key: EditableKey, value: string): void {
-  if (key === 'baseUrl') {
-    let parsed: URL;
-    try {
-      parsed = new URL(value);
-    } catch {
-      throw new Error(`baseUrl 必须是合法 URL（http/https），收到: ${value}`);
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error(`baseUrl 必须是 http/https URL，收到协议: ${parsed.protocol}`);
-    }
-  }
+/** 校验并返回规范化后的值（baseUrl：http/https、无凭据/查询串、去尾斜杠） */
+export function validateConfigValue(key: EditableKey, value: string): string {
+  if (key === 'baseUrl') return normalizeBaseUrl(value);
+  return value;
 }
 
 /** token 脱敏：cx_pat_<id8>.<secret> → cx_pat_<id8>.*** */
@@ -61,10 +56,14 @@ export function configGetCommand(key: string): void {
 export function configSetCommand(key: string, value: string): void {
   try {
     validateConfigKey(key);
-    validateConfigValue(key, value);
-    const cfg = loadConfig();
-    saveConfig({ ...cfg, [key]: value.replace(/\/+$/, '') });
-    console.error(kleur.green(`✔ ${key} = ${value}`));
+    const normalized = validateConfigValue(key, value);
+    // 只改文件里的这一个键：绝不回写 loadConfig()（其中含 CX_PAT 等环境变量）
+    updateFileConfig({ [key]: normalized });
+    console.error(kleur.green(`✔ ${key} = ${normalized}`));
+    if (key === 'baseUrl' && isInsecureBaseUrl(normalized)) {
+      console.error(kleur.yellow(`⚠ ${normalized} 不是 https：PAT 将以明文在网络上传输`));
+    }
+    warnEnvOverride(key);
   } catch (err) {
     failUsage(err);
   }
@@ -73,19 +72,29 @@ export function configSetCommand(key: string, value: string): void {
 export function configUnsetCommand(key: string): void {
   try {
     validateConfigKey(key);
-    const cfg = loadConfig();
-    saveConfig({ ...cfg, baseUrl: DEFAULT_BASE_URL });
+    updateFileConfig({ [key]: undefined });
     console.error(kleur.green(`✔ 已清除 ${key}（恢复默认 ${DEFAULT_BASE_URL}）`));
+    warnEnvOverride(key);
   } catch (err) {
     failUsage(err);
   }
 }
 
+/** 环境变量优先于文件：写了文件但当前 shell 不会生效时要明说 */
+function warnEnvOverride(key: EditableKey): void {
+  if (key === 'baseUrl' && process.env.CX_BASE_URL) {
+    console.error(kleur.yellow(`⚠ 环境变量 CX_BASE_URL=${process.env.CX_BASE_URL} 优先于配置文件，当前 shell 中本次修改不生效`));
+  }
+}
+
 export function configListCommand(): void {
   const cfg = loadConfig();
+  const file = loadFileConfig();
   const view = {
     baseUrl: cfg.baseUrl,
+    baseUrlSource: process.env.CX_BASE_URL ? 'env:CX_BASE_URL' : file.baseUrl ? 'file' : 'default',
     token: cfg.token ? maskToken(cfg.token) : '(未配置，运行 cx login)',
+    tokenSource: process.env.CX_PAT ? 'env:CX_PAT' : file.token ? 'file' : 'none',
     tokenId: cfg.tokenId ?? '',
   };
   console.log(JSON.stringify(view, null, 2));

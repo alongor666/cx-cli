@@ -3,9 +3,9 @@
  * 顶层 import './http.js' 启用全局 undici dispatcher（keep-alive + HTTP/2）。
  */
 import kleur from 'kleur';
-import './http.js';
 import { attachTlsPersistence } from './http.js';
 import { loadConfig } from './config.js';
+import { buildApiUrl } from './url.js';
 
 const tlsAttached = new Set<string>();
 function ensureTlsPersistence(host: string): void {
@@ -27,6 +27,9 @@ interface RequestOpts {
   timeoutMs?: number;
   /** 请求服务端返回与本次查询结果同一 cache/data epoch 的证据快照。 */
   analysisEvidence?: boolean;
+  /** 显式凭据：cx login 校验候选 PAT 时使用，绕过（可能被 CX_PAT 覆盖的）已存配置。 */
+  token?: string;
+  baseUrl?: string;
 }
 
 export interface CxResponse<T> {
@@ -50,17 +53,14 @@ export async function cxGetWithMeta<T = unknown>(
   opts: RequestOpts = {},
 ): Promise<CxResponse<T>> {
   const cfg = loadConfig();
-  if (!cfg.token) {
+  const token = opts.token ?? cfg.token;
+  const baseUrl = opts.baseUrl ?? cfg.baseUrl;
+  if (!token) {
     throw new CxApiError(401, 'No PAT configured. Run: cx login');
   }
 
-  const url = new URL(routePath.startsWith('http') ? routePath : `${cfg.baseUrl}${routePath}`);
+  const url = buildApiUrl(baseUrl, routePath, opts.query);
   ensureTlsPersistence(url.host);
-  if (opts.query) {
-    for (const [k, v] of Object.entries(opts.query)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-    }
-  }
 
   let signal = opts.signal;
   if (opts.timeoutMs && opts.timeoutMs > 0) {
@@ -70,7 +70,7 @@ export async function cxGetWithMeta<T = unknown>(
 
   const startedAt = Date.now();
   try {
-    return await doRequest<T>(url, cfg.token, signal, 1, Boolean(opts.analysisEvidence));
+    return await doRequest<T>(url, token, signal, 1, Boolean(opts.analysisEvidence));
   } finally {
     if (apiDebug.verbose) {
       console.error(kleur.gray(`→ GET ${url} (${Date.now() - startedAt}ms)`));
@@ -117,7 +117,7 @@ async function doRequest<T>(
     throw new CxApiError(403, body?.error?.message ?? 'Permission denied');
   }
   if (res.status === 429) {
-    const retryAfter = Number(res.headers.get('Retry-After') ?? '60');
+    const retryAfter = parseRetryAfter(res.headers.get('Retry-After'));
     // 限流回退上限 10s — 防止单个请求等几十秒拖垮整个 batch；超出上限直接抛 429 让上层（如 cx batch）决策
     const capped = Math.min(retryAfter, 10);
     if (attempt === 1 && capped <= 5) {
@@ -136,11 +136,34 @@ async function doRequest<T>(
     throw new CxApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`);
   }
 
+  let data: T;
+  try {
+    data = (await res.json()) as T;
+  } catch {
+    // 典型场景：baseUrl 指向了网关/登录页，返回 200 HTML
+    const type = res.headers.get('Content-Type') ?? 'unknown';
+    throw new CxApiError(res.status, `服务端返回的不是 JSON（HTTP ${res.status}, Content-Type: ${type}）；请检查 baseUrl（cx config get baseUrl）`);
+  }
   return {
-    data: (await res.json()) as T,
+    data,
     requestId: res.headers.get('X-Request-Id'),
     analysisEvidence: res.headers.get('X-Cx-Analysis-Evidence'),
   };
+}
+
+/**
+ * Retry-After 可以是秒数或 HTTP-date（RFC 9110 §10.2.3）。
+ * 缺失/无法解析时按 60s 处理；负数截为 0。
+ */
+export function parseRetryAfter(header: string | null, now = Date.now()): number {
+  if (header === null || header.trim() === '') return 60;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  // HTTP-date 必含英文星期/月份；否则 V8 的宽松 Date.parse 会把 "1.5" 解析成 2001 年 → 立即重试
+  if (!/[a-z]/i.test(trimmed)) return 60;
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return 60;
+  return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 async function safeJson(res: Response): Promise<any> {
