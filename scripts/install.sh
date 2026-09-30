@@ -56,7 +56,7 @@ curl -fSL --retry 3 --progress-bar -o "$tmp/$asset" "$base/$asset" || die "下�
 expected="$(awk -v a="$asset" '$2 == a { print $1 }' "$tmp/SHA256SUMS")"
 [ -n "$expected" ] || die "SHA256SUMS 中没有 $asset"
 actual="$(sha "$tmp/$asset")"
-[ "$expected" = "$actual" ] || die "SHA-256 不匹配（期望 $expected，实际 $actual），已中止"
+[ "$expected" = "$actual" ] || die "SHA-256 不匹配（期望 ${expected}，实际 ${actual}），已中止"
 say "✔ SHA-256 校验通过"
 
 mkdir -p "$BIN_DIR"
@@ -64,7 +64,7 @@ chmod 755 "$tmp/$asset"
 mv -f "$tmp/$asset" "$BIN_DIR/cx.tmp.$$"
 mv -f "$BIN_DIR/cx.tmp.$$" "$BIN_DIR/cx"
 cx="$BIN_DIR/cx"
-say "✔ 已安装 $cx（$("$cx" --version)）"
+say "✔ 已安装 ${cx}（$("$cx" --version)）"
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
