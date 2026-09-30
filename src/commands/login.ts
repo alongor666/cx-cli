@@ -1,7 +1,8 @@
 /**
  * cx login
  *
- * 接受 PAT（--token），验证一次（GET /api/auth/me），成功后写入 ~/.chexian/config.json
+ * 接受 PAT，验证一次（GET /api/auth/me），成功后写入 ~/.chexian/config.json
+ * 来源优先级：--token（会进 shell history，不推荐）> 管道 stdin（密码管理器注入）> 终端隐藏输入
  */
 import kleur from 'kleur';
 import readline from 'readline';
@@ -16,7 +17,7 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
 
   let token = opts.token;
   if (!token) {
-    token = await promptToken();
+    token = process.stdin.isTTY ? await promptToken() : await readStdin();
   }
   if (!token.startsWith('cx_pat_')) {
     console.error(kleur.red('✘ Invalid token format. Expected cx_pat_xxx.yyy'));
@@ -47,6 +48,13 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
     // 退出码契约：401 → 2（鉴权失败）；网络/其它 → 1（通用错误）
     process.exit(exitCodeForError(err));
   }
+}
+
+/** 管道输入：读到 EOF（不要求结尾换行；readline.question 在无换行 EOF 时不会回调） */
+async function readStdin(): Promise<string> {
+  let data = '';
+  for await (const chunk of process.stdin) data += String(chunk);
+  return data.trim();
 }
 
 function promptToken(): Promise<string> {

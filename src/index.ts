@@ -62,6 +62,7 @@ program
   $ cx query /repair/city             path 直通调用
   $ echo "SELECT ..." | cx sql -      stdin 管道 SQL
   $ cx health                         连通性诊断
+  $ cx mcp install                    接入本机 Agent（MCP）
 
 退出码: 0 成功 · 1 通用错误 · 2 鉴权失败 · 3 权限不足 · 4 用法错误 · 5 限流`);
 
@@ -311,6 +312,46 @@ function completionTargets(root: Command): { commands: string[]; globalOptions: 
     ],
   };
 }
+
+// cx mcp：MCP server 与客户端配置全部 lazy import，保持其它命令冷启动不载入 MCP SDK（cli-perf-sentinel）
+const mcp = program
+  .command('mcp')
+  .description('MCP server（stdio）：把只读查询路由暴露给 Claude Code / Codex / Cursor 等 Agent');
+
+mcp
+  .command('serve', { isDefault: true })
+  .description('启动 stdio MCP server（Agent 配置里写 `cx mcp` 即可；PAT 复用 cx login）')
+  .action(async () => {
+    const { runMcpServer } = await import('./mcp/server.js');
+    await runMcpServer(pkg.version);
+  });
+
+mcp
+  .command('install')
+  .description('自检后把 cx mcp 写进本机 Agent 配置（配置中不含 PAT）')
+  .option('--client <ids>', '逗号分隔：claude-code,codex,cursor,claude-desktop,zcode（默认自动检测）')
+  .option('--skip-check', '跳过自检（不推荐）')
+  .action(async (options) => {
+    const { mcpInstallCommand } = await import('./commands/mcp.js');
+    await mcpInstallCommand({ client: options.client, skipCheck: options.skipCheck });
+  });
+
+mcp
+  .command('uninstall')
+  .description('从本机 Agent 配置移除 chexian 条目（不清 PAT，需要时再 cx logout）')
+  .option('--client <ids>', '逗号分隔，默认全部')
+  .action(async (options) => {
+    const { mcpUninstallCommand } = await import('./commands/mcp.js');
+    mcpUninstallCommand({ client: options.client });
+  });
+
+mcp
+  .command('status')
+  .description('查看各 Agent 是否已配置 cx mcp')
+  .action(async () => {
+    const { mcpStatusCommand } = await import('./commands/mcp.js');
+    mcpStatusCommand();
+  });
 
 program
   .command('completion <shell>')

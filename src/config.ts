@@ -52,6 +52,16 @@ export function loadConfig(): CxConfig {
   };
 }
 
+/** ~/.chexian/config.json 里是否持久化了 PAT（不看环境变量；Agent 进程只能读到这一份） */
+export function hasPersistedToken(): boolean {
+  try {
+    const raw = JSON.parse(fs.readFileSync(configFile(), 'utf-8')) as Partial<CxConfig>;
+    return typeof raw.token === 'string' && raw.token.startsWith('cx_pat_');
+  } catch {
+    return false;
+  }
+}
+
 export function saveConfig(cfg: CxConfig): void {
   const dir = configDir();
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

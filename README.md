@@ -4,7 +4,17 @@ chexian-api 只读命令行客户端。PAT（个人访问令牌）鉴权，权�
 
 ## 安装
 
-两条分发通道，按机器上有没有 Node 选：
+**一键安装（推荐，含 Agent 接入）**：下载二进制 → SHA-256 校验 → 安装 → `cx login` → `cx mcp install`，见下方「接入 Agent（MCP）」。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.sh | sh     # macOS / Linux
+```
+
+```powershell
+irm https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.ps1 | iex          # Windows
+```
+
+只装 cx 不接 Agent：加环境变量 `CX_SKIP_MCP=1`；固定版本：`CX_VERSION=v1.4.0`。手动安装的两条通道：
 
 | 方式 | 命令 | 前提 | 适用 |
 |---|---|---|---|
@@ -26,13 +36,35 @@ Node 版本下限为 22，因为源码使用 `import ... with { type: 'json' }`�
 ## 登录
 
 ```bash
-cx login                     # 交互式输入 PAT（或 --token cx_pat_xxx.yyy）
+cx login                     # 交互式隐藏输入 PAT；管道输入亦可：op read ... | cx login
+                             # --token cx_pat_xxx.yyy 会进 shell history，不推荐
 cx whoami                    # 验证身份与数据范围
 ```
 
 PAT 在 Web 端「设置 → 访问令牌」生成。配置存放位置：macOS / Linux 为 `~/.chexian/config.json`，Windows 为 `%USERPROFILE%\.chexian\config.json`。
 
 > **Windows 用户请注意**：写配置时代码指定了 `0o600` 权限（仅属主可读），用于防止同机其他用户读到 PAT。**该保护在 Windows 上不生效**——NTFS 不映射 POSIX 权限位，Node 会静默忽略该参数（不报错），文件将继承所在目录的默认 ACL。若该机器存在其他登录用户，请改用环境变量 `CX_PAT` 不落盘，或自行用 `icacls` 收紧该文件权限。
+
+## 接入 Agent（MCP）
+
+`cx mcp` 是内置的 stdio MCP server：启动时拉 `/api/auth/route-catalog`，把每条只读查询路由映射成一个 `cx_query_*` 工具，另加 `cx_discover_*` 与 `cx_whoami`。令牌复用 `cx login`（或 `CX_PAT`），**Agent 配置里不写 PAT**。
+
+```bash
+cx mcp install                           # 先自检（拉起 cx mcp 列工具），再写入本机检测到的 Agent
+cx mcp install --client cursor,codex     # 只写指定客户端
+cx mcp status                            # 各 Agent 配置状态
+cx mcp uninstall                         # 移除条目（PAT 另用 cx logout 清）
+```
+
+| 客户端 id | 写入方式 |
+|---|---|
+| `claude-code` | `claude mcp add --scope user chexian -- <cx> mcp` |
+| `codex` | `codex mcp add chexian -- <cx> mcp` |
+| `cursor` | `~/.cursor/mcp.json` → `mcpServers.chexian` |
+| `claude-desktop` | `claude_desktop_config.json` → `mcpServers.chexian` |
+| `zcode` | `~/.zcode/cli/config.json` → `mcp.servers.chexian` |
+
+JSON 文件写前备份为 `<文件>.cx-bak`，原子替换；文件不是合法 JSON 时拒绝写入。条目统一为 `{"command": "<cx 绝对路径>", "args": ["mcp"]}`，升级只需替换二进制。单次工具结果默认上限 100000 字节（超限按行截断并明示），可用 `CX_MCP_MAX_BYTES` 调整。
 
 ## 仓库内开发运行
 
@@ -65,6 +97,7 @@ bun run build && bun link
 | `cx health` | 连通性诊断（服务存活 + 数据版本 + 延迟） |
 | `cx batch [--concurrency n] [--summary]` | stdin 读 JSONL 批量调用（keep-alive 连接复用） |
 | `cx config <get\|set\|unset\|list\|path>` | 本地配置管理（白名单：baseUrl） |
+| `cx mcp [install\|uninstall\|status]` | stdio MCP server 与 Agent 配置写入（见「接入 Agent」） |
 | `cx completion <bash\|zsh>` | 生成 shell 补全脚本（清单从命令注册运行时派生） |
 
 ## cx query 的三种寻址
