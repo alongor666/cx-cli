@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
+import { writeFileAtomic } from './config.js';
 
 const CACHE_DIR = path.join(os.homedir(), '.chexian');
 const SESSION_TTL_MS = 6 * 3600 * 1000;
@@ -34,8 +35,8 @@ export function loadSession(host: string): Buffer | undefined {
 
 export function saveSession(host: string, buf: Buffer): void {
   try {
-    fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(sessionPath(host), buf, { mode: 0o600 });
+    // 会话票据可用于恢复 TLS 会话，按凭据对待：原子写 + 强制 600
+    writeFileAtomic(sessionPath(host), buf);
   } catch {
     // 静默失败：磁盘只读 / 权限问题不影响 cx 工作，只是少一次性能优化
   }
