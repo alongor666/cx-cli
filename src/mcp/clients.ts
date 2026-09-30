@@ -49,7 +49,9 @@ export function selfEntry(execPath = process.execPath, script = process.argv[1])
 }
 
 export function sameEntry(a: McpEntry | null, b: McpEntry): boolean {
-  return !!a && a.command === b.command && JSON.stringify(a.args) === JSON.stringify(b.args);
+  if (!a || a.command !== b.command) return false;
+  // `<bin> mcp get` 的文本输出把 args 以空格拼接，含空格的路径会被拆散：按拼接后的字符串比较
+  return a.args.join(' ') === b.args.join(' ');
 }
 
 // ── JSON 文件型客户端 ─────────────────────────────────────────────
@@ -97,8 +99,15 @@ export function jsonAdapter(opts: {
     for (const key of opts.keyPath) {
       const next = node[key];
       if (next && typeof next === 'object' && !Array.isArray(next)) node = next as Json;
-      else if (create) { node[key] = {}; node = node[key] as Json; }
-      else return null;
+      else if (next === undefined || next === null) {
+        if (!create) return null;
+        node[key] = {};
+        node = node[key] as Json;
+      } else {
+        // 存在但不是对象（数组/字符串…）：可能是用户或其他工具的格式，覆盖即丢失其中的 server 配置
+        if (!create) return null;
+        throw new Error(`${opts.file} 中 ${opts.keyPath.join('.')} 不是对象，已跳过（未改动）。请手工检查后重试`);
+      }
     }
     return node;
   };

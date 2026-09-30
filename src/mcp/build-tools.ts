@@ -74,14 +74,30 @@ function stripTrailingPeriod(s: string): string {
   return s.replace(/[。.]+$/, '');
 }
 
+/** 工具描述单段上限：描述会在 tools/list 时进入每个 Agent 的上下文，服务端文案不设防就是注入面 */
+export const MAX_DESCRIPTION_CHARS = 2000;
+
+/** 去掉控制字符与零宽/双向控制字符（不可见的指令夹带），并截断到上限 */
+export function sanitizeText(s: string, max = MAX_DESCRIPTION_CHARS): string {
+  // eslint-disable-next-line no-control-regex
+  const clean = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '');
+  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
+/** MCP 工具名须匹配 ^[a-zA-Z0-9_-]{1,64}$：非法字符替换为 _，超长截断 */
+export function toolNameForRoute(key: string): string {
+  return `cx_query_${key.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`.slice(0, 64);
+}
+
 export function routeToTool(meta: RouteMeta): McpTool {
   const properties: Record<string, { type: string; description: string; enum?: string[] }> = {};
   const required: string[] = [];
   for (const p of meta.parameters) {
+    const desc = sanitizeText(p.description ?? '', 500);
     properties[p.name] = {
       type: paramTypeToJsonSchema(p.type),
-      description: p.type === 'date' ? `${p.description} (date YYYY-MM-DD)` : p.description,
-      ...(p.enum ? { enum: p.enum } : {}),
+      description: p.type === 'date' ? `${desc} (date YYYY-MM-DD)` : desc,
+      ...(Array.isArray(p.enum) ? { enum: p.enum.map(String) } : {}),
     };
     if (p.required) required.push(p.name);
   }
@@ -94,8 +110,8 @@ export function routeToTool(meta: RouteMeta): McpTool {
   if (meta.dataScope) caliber.push(DATA_SCOPE_HINT);
   const caliberText = caliber.length > 0 ? ` 【${caliber.join('。')}。】` : '';
   return {
-    name: `cx_query_${meta.key.toLowerCase()}`,
-    description: `${stripTrailingPeriod(meta.summary)}. ${meta.description}${caliberText}`,
+    name: toolNameForRoute(meta.key),
+    description: sanitizeText(`${stripTrailingPeriod(meta.summary)}. ${meta.description}${caliberText}`),
     inputSchema: {
       type: 'object',
       properties,
@@ -111,27 +127,46 @@ export interface CatalogBuildResult {
   warnings: string[];
 }
 
+function isRouteParam(p: unknown): p is RouteParam {
+  if (!p || typeof p !== 'object') return false;
+  const o = p as Record<string, unknown>;
+  return typeof o.name === 'string' && o.name.length > 0
+    && (o.description === undefined || typeof o.description === 'string')
+    && (o.enum === undefined || Array.isArray(o.enum));
+}
+
 function isRouteMeta(r: unknown): r is RouteMeta {
   if (!r || typeof r !== 'object') return false;
   const o = r as Record<string, unknown>;
-  return typeof o.key === 'string' && typeof o.fullPath === 'string'
+  return typeof o.key === 'string' && o.key.length > 0 && typeof o.fullPath === 'string'
     && typeof o.summary === 'string' && typeof o.description === 'string'
-    && Array.isArray(o.parameters);
+    && Array.isArray(o.parameters) && o.parameters.every(isRouteParam);
 }
 
-/** 纯函数：catalog 路由 → 工具。非 GET 跳过、未知字段与缺口径告警，不静默 */
+/** 纯函数：catalog 路由 → 工具。非 GET / 非 /api/ 路径 / 重名跳过，未知字段与缺口径告警，不静默 */
 export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
   const warnings: string[] = [];
   const routes: RouteMeta[] = [];
+  const seenNames = new Set<string>();
   for (const raw of rawRoutes) {
     if (!isRouteMeta(raw)) {
-      warnings.push(`跳过形状异常的路由条目: ${JSON.stringify(raw).slice(0, 120)}`);
+      warnings.push(`跳过形状异常的路由条目: ${String(JSON.stringify(raw)).slice(0, 120)}`);
       continue;
     }
     if (raw.method !== 'GET') {
       warnings.push(`跳过非 GET 路由 ${raw.key}（method=${raw.method}）：MCP 通道只读`);
       continue;
     }
+    if (!raw.fullPath.startsWith('/api/')) {
+      warnings.push(`跳过 fullPath 不在 /api/ 下的路由 ${raw.key}: ${raw.fullPath.slice(0, 120)}`);
+      continue;
+    }
+    const name = toolNameForRoute(raw.key);
+    if (seenNames.has(name)) {
+      warnings.push(`跳过重名路由 ${raw.key}：工具名 ${name} 已被占用`);
+      continue;
+    }
+    seenNames.add(name);
     const unknown = Object.keys(raw).filter((k) => !KNOWN_CATALOG_FIELDS.includes(k));
     if (unknown.length > 0) warnings.push(`路由 ${raw.key} 含 MCP 未识别字段: ${unknown.join(', ')}`);
     if (raw.timeWindow && !raw.timeWindowLabel) {
@@ -201,9 +236,9 @@ export async function buildDiscoveryTools(cfg: McpConfig): Promise<DiscoveryTool
   // 启动时摘要拉取失败就不写数字：宁可不说，也不给 LLM 一个陈旧的计数
   const fields = Array.isArray(fieldsResp?.data) ? fieldsResp.data : null;
   const metrics = Array.isArray(metricsResp?.data) ? metricsResp.data : null;
-  const groupableFieldIds = (fields ?? []).filter((f) => f.groupable).slice(0, 15).map((f) => f.id).join(', ');
-  const metricCategories = metrics ? Array.from(new Set(metrics.map((m) => m.category))).join(', ') : '';
-  const vehicleFilters = (presetsResp?.data?.vehicleQuickFilters ?? []).join(', ');
+  const groupableFieldIds = sanitizeText((fields ?? []).filter((f) => f.groupable).slice(0, 15).map((f) => String(f.id)).join(', '), 500);
+  const metricCategories = metrics ? sanitizeText(Array.from(new Set(metrics.map((m) => String(m.category)))).join(', '), 500) : '';
+  const vehicleFilters = sanitizeText((Array.isArray(presetsResp?.data?.vehicleQuickFilters) ? presetsResp.data.vehicleQuickFilters : []).map(String).join(', '), 500);
 
   const fieldsSummary = fields ? `（${fields.length} 个字段，含 column 可查列名 / queryable / 真实类型）` : '（含 column 可查列名 / queryable / 真实类型）';
   const metricsSummary = metrics ? `（${metrics.length} 个）。可按 category 过滤：${metricCategories}` : '。可按 category 过滤（分类清单见返回值）';

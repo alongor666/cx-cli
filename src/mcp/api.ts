@@ -29,6 +29,11 @@ export function loadMcpConfig(): McpConfig {
 /** 单次工具调用的 HTTP 超时：没有它，一个挂住的请求会让 Agent 的工具调用永久阻塞 */
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = 500;
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export function resolveTimeoutMs(env = process.env): number {
   const n = Number(env.CX_MCP_TIMEOUT_MS);
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
@@ -42,18 +47,29 @@ export async function mcpGet<T = unknown>(
   // 与 CLI 共用 buildApiUrl：只允许 baseUrl 下的相对 path，拒绝 ../ 逃逸（参数来自 LLM，视为不可信）
   const url = buildApiUrl(cfg.baseUrl, routePath, query);
   const timeoutMs = resolveTimeoutMs();
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    const name = (err as Error).name;
-    if (name === 'TimeoutError' || name === 'AbortError') {
-      throw new Error(`API timeout after ${timeoutMs}ms (CX_MCP_TIMEOUT_MS 可调)`);
+  let res: Response | undefined;
+  // 网络错误与 502/503/504 有限重试（GET 幂等）；超时不重试，避免把单次调用拖到数倍超时
+  for (let attempt = 1; ; attempt++) {
+    try {
+      res = await fetch(url, {
+        headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      const name = (err as Error).name;
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new Error(`API timeout after ${timeoutMs}ms (CX_MCP_TIMEOUT_MS 可调)`);
+      }
+      if (attempt >= MAX_ATTEMPTS) throw new Error(`Network error: ${(err as Error).message}`);
+      await sleep(RETRY_BASE_MS * attempt);
+      continue;
     }
-    throw new Error(`Network error: ${(err as Error).message}`);
+    if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_ATTEMPTS) {
+      await res.body?.cancel().catch(() => {});
+      await sleep(RETRY_BASE_MS * attempt);
+      continue;
+    }
+    break;
   }
   if (!res.ok) {
     let body: any = null;
