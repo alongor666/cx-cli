@@ -159,6 +159,8 @@ function runCx(argv) {
       ...process.env,
       NO_COLOR: '1',
       HOME: ISOLATED_HOME,
+      // Windows 上 os.homedir() 读 USERPROFILE 而非 HOME：不隔离就会把真实 whoami/KPI 数据快照进公开基线
+      USERPROFILE: ISOLATED_HOME,
       CX_PAT: '',
       CX_BASE_URL: '',
     },

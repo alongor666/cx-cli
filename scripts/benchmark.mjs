@@ -53,10 +53,11 @@ const flags = {
 const BASE_URL = flags.base.replace(/\/$/, '');
 const HEALTH_URL = `${BASE_URL}/health`;
 
+/** nearest-rank 分位数：原 floor(q·n) 在 n=20、q=0.95 时取到的是最大值，单个离群点即触发 10% 回归门禁 */
 function quantile(arr, q) {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.floor(q * sorted.length));
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
   return sorted[idx];
 }
 
@@ -80,7 +81,8 @@ function spawnOnce(args) {
     const start = performance.now();
     const proc = spawn(SPAWN_CMD, [...SPAWN_PREFIX, ...args], {
       cwd: CLI_ROOT,
-      env: { ...process.env, NO_COLOR: '1' },
+      // CX_BASE_URL 与 C/D/E 档同源：否则 --base 只作用于进程内档位，B 档仍打配置里的 host
+      env: { ...process.env, NO_COLOR: '1', CX_BASE_URL: BASE_URL },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';

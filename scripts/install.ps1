@@ -11,6 +11,9 @@
 # 变量若写在顶层会永久留在用户会话；子作用域让任何退出路径（正常 / return / throw）都不外溢
 & {
   $ErrorActionPreference = 'Stop'
+  # Windows PowerShell 5.1：进度条会让约 100MB 的下载慢数倍（看起来像卡死）；老系统默认可能不含 TLS 1.2
+  $ProgressPreference = 'SilentlyContinue'
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
   $repo = 'alongor666/cx-cli'
   $version = if ($env:CX_VERSION) { $env:CX_VERSION } else { 'latest' }

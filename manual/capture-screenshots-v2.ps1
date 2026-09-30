@@ -1,4 +1,4 @@
-# cx-cli 自动化截图脚本 v2.0
+﻿# cx-cli 自动化截图脚本 v2.0
 #
 # ⚠️ 安全约定（chexian-api PR #669 codex review 沉淀）：
 #   1. 本脚本生成的截图保存到 ./images/ — 该目录已在 cli/.gitignore 中被忽略
@@ -25,7 +25,8 @@ $DISPLAY_PAT_PLACEHOLDER = "cx_pat_PLACEHOLDER.example_replace_with_yours_locall
 $QUERY_YEAR = "2026"  # 根据实际数据修改年份
 
 # 截图保存目录
-$OUTPUT_DIR = "images"
+# 固定在脚本目录下（被 .gitignore 的 manual/images/）：相对当前目录时从仓库根运行会把含真实数据的截图落到未忽略的位置
+$OUTPUT_DIR = Join-Path $PSScriptRoot "images"
 
 # 截图延迟（秒），等待命令执行完成
 $DELAY_SECONDS = 3

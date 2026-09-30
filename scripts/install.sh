@@ -32,6 +32,14 @@ case "$(uname -m)" in
   x86_64|amd64) arch=x64 ;;
   *) die "不支持的 CPU 架构: $(uname -m)" ;;
 esac
+# Rosetta 2 下的终端 uname -m 报 x86_64：Apple Silicon 应装原生 arm64 版
+if [ "$os" = darwin ] && [ "$arch" = x64 ] && [ "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
+  arch=arm64
+fi
+# 发布的 Linux 二进制基于 glibc：musl（Alpine 等）上无法运行，提前说清楚而不是装完才报怪错
+if [ "$os" = linux ] && { ldd --version 2>&1 || true; } | grep -qi musl; then
+  die "检测到 musl libc（如 Alpine），发布的 Linux 二进制仅支持 glibc 发行版"
+fi
 asset="cx-${os}-${arch}"
 
 if [ -n "${CX_RELEASE_BASE:-}" ]; then
@@ -42,6 +50,12 @@ else
   base="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
 
+# 下载源为 https 时，禁止 curl 跟随重定向降级到明文 http（CX_RELEASE_BASE 允许内网 http/file 源，不受此限）
+case "$base" in
+  https://*) curl_secure="--proto =https --proto-redir =https --tlsv1.2" ;;
+  *) curl_secure="" ;;
+esac
+
 if command -v sha256sum >/dev/null 2>&1; then sha() { sha256sum "$1" | cut -d' ' -f1; }
 elif command -v shasum >/dev/null 2>&1; then sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 else die "缺少 sha256sum / shasum，无法校验"; fi
@@ -50,8 +64,10 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$BIN_DIR/cx.tmp.$$"' EXIT INT TERM
 
 say "下载 ${asset}（${VERSION}）…"
-curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "下载 SHA256SUMS 失败"
-curl -fSL --retry 3 --progress-bar -o "$tmp/$asset" "$base/$asset" || die "下载 $asset 失败"
+# shellcheck disable=SC2086 # curl_secure 需按空格拆成多个参数
+curl $curl_secure -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "下载 SHA256SUMS 失败"
+# shellcheck disable=SC2086
+curl $curl_secure -fSL --retry 3 --progress-bar -o "$tmp/$asset" "$base/$asset" || die "下载 ${asset} 失败"
 
 expected="$(awk -v a="$asset" '$2 == a { print $1 }' "$tmp/SHA256SUMS")"
 [ -n "$expected" ] || die "SHA256SUMS 中没有 $asset"
@@ -64,7 +80,9 @@ chmod 755 "$tmp/$asset"
 mv -f "$tmp/$asset" "$BIN_DIR/cx.tmp.$$"
 mv -f "$BIN_DIR/cx.tmp.$$" "$BIN_DIR/cx"
 cx="$BIN_DIR/cx"
-say "✔ 已安装 ${cx}（$("$cx" --version)）"
+# 命令替换里的失败不会触发 set -e：显式检查，否则会带着坏二进制继续走到 login
+cx_version="$("$cx" --version)" || die "安装后的 ${cx} 无法运行（系统不兼容？）"
+say "✔ 已安装 ${cx}（${cx_version}）"
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

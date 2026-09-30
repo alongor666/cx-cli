@@ -1,4 +1,4 @@
-# cx-cli 自动化截图脚本
+﻿# cx-cli 自动化截图脚本
 #
 # ⚠️ 安全约定（PR #669 codex review 沉淀，与 v2 一致）：
 #   1. 截图前请**先手动运行 `cx login`** 完成登录（PAT masked 输入）
@@ -22,7 +22,8 @@ $DISPLAY_PAT_PLACEHOLDER = "cx_pat_PLACEHOLDER.example_replace_locally_DO_NOT_CO
 $QUERY_YEAR = "2026"  # 根据实际数据修改
 
 # 截图保存目录
-$OUTPUT_DIR = "images"
+# 固定在脚本目录下（被 .gitignore 的 manual/images/）：相对当前目录时从仓库根运行会把含真实数据的截图落到未忽略的位置
+$OUTPUT_DIR = Join-Path $PSScriptRoot "images"
 
 # 命令行窗口配置
 $WINDOW_WIDTH = 1400

@@ -1,4 +1,8 @@
 @echo off
+REM 切到脚本所在目录：管理员运行时当前目录是 System32，截图会落到别处
+cd /d "%~dp0"
+REM 本文件为 UTF-8：切换代码页，否则中文 Windows（GBK）下提示文字是乱码
+chcp 65001 >nul
 REM cx-cli 自动化截图启动器
 REM 双击此文件即可启动截图脚本
 
