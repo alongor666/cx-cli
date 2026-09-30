@@ -14,12 +14,11 @@ curl -fsSL https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/inst
 irm https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.ps1 | iex          # Windows
 ```
 
-只装 cx 不接 Agent：加环境变量 `CX_SKIP_MCP=1`；固定版本：`CX_VERSION=v1.4.0`。手动安装的两条通道：
+只装 cx 不接 Agent：加环境变量 `CX_SKIP_MCP=1`；固定版本：`CX_VERSION=v1.4.0`。上面的安装脚本取自 `main` 分支；如需脚本本身也固定版本，把 URL 中的 `main` 换成对应 tag（如 `v1.4.0`）。
 
-| 方式 | 命令 | 前提 | 适用 |
-|---|---|---|---|
-| **npm 包** | `npm install -g @chexian/cli` | Node ≥ 22 | 已在 Node 生态里；体积约 100KB，随 npm 一起升级 |
-| **预编译二进制** | 从 [Releases](https://github.com/alongor666/cx-cli/releases) 下载对应平台文件 | 无 | 机器上没有 Node；单文件自包含（60–94MB），覆盖 macOS / Linux / Windows 的 x64 与 arm64 |
+手动安装：从 [Releases](https://github.com/alongor666/cx-cli/releases) 下载对应平台文件（单文件自包含，60–100MB，覆盖 macOS / Linux(glibc) / Windows 的 x64 与 arm64，无需 Node）。
+
+> **`@chexian/cli` 目前没有发布到 npm**：`npm install -g @chexian/cli` 会 404。请勿安装任何同名第三方包。有 Node ≥ 22 的开发者可按「仓库内开发运行」从源码构建。
 
 二进制随附 `SHA256SUMS`，安装前建议校验：
 
@@ -31,7 +30,7 @@ shasum -a 256 -c SHA256SUMS --ignore-missing         # macOS / Linux
 Get-FileHash .\cx-windows-x64.exe -Algorithm SHA256  # Windows，与 SHA256SUMS 比对
 ```
 
-Node 版本下限为 22，因为源码使用 `import ... with { type: 'json' }`（import attributes），该语法在 Node 22 才转正；Node 20 及更早会直接报语法错误。
+从源码运行要求 Node ≥ 22：源码使用 `import ... with { type: 'json' }`（JSON 模块 import attributes），Node 22 起稳定；更早版本不受支持。
 
 ## 登录
 
@@ -69,8 +68,9 @@ JSON 文件写前备份为 `<文件>.cx-bak`，原子替换；文件不是合法
 ## 仓库内开发运行
 
 ```bash
-cd cli && bun install
+bun install                  # 在 chexian-api 主仓中先 cd cli；在 cx-cli 镜像中直接在仓库根目录执行
 bunx tsx src/index.ts --help
+bun run typecheck && bun run test   # 提交前检查（CI 同样执行）
 
 # 构建后以 cx 运行
 bun run build && bun link
@@ -112,12 +112,15 @@ cx query /repair/city                    # 3) 任意 / 开头 path 直通（不�
 
 ## 全局选项
 
+全局选项可写在子命令前后，如 `cx -q health` 或 `cx health -q`。
+
 | 选项 | 说明 |
 |---|---|
-| `--format / -f` | 输出格式 table / json / csv（各命令一致；终端默认 table，管道默认 json） |
 | `--no-color` | 禁用彩色（也尊重 `NO_COLOR` 环境变量） |
 | `--quiet / -q` | 抑制提示性 stderr 输出（错误仍打印） |
-| `--verbose` | stderr 打印请求 URL 与耗时 |
+| `--verbose` | stderr 打印请求 URL 与耗时（注意：`cx fields --verbose` 是 fields 自己的选项，含义为附带 ETL 元数据） |
+
+`--format / -f`（table / json / csv；终端默认 table，管道默认 json）是**各子命令**的选项，必须写在子命令之后：`cx whoami -f json`（`cx -f json whoami` 会报 unknown option）。
 
 ## 退出码契约
 
@@ -151,6 +154,11 @@ if ! cx health -q; then echo "服务异常"; fi
 
 `CX_BASE_URL` / `CX_PAT` 环境变量 > `~/.chexian/config.json` > 默认 `https://chexian.cretvalu.com`。
 
+- 环境变量只在当前进程生效，**永远不会被写进配置文件**（`cx config set` / `cx login` / `cx logout` 只修改文件中对应的键）。`cx config list` 会标出每一项的来源（env / file / default）。
+- `cx login` 先用新 PAT 校验，成功后才写盘；校验失败时原有配置保持不变。
+- baseUrl 必须是 http(s)，不能带凭据或查询串；非本机地址使用明文 `http://` 时会告警（PAT 将以明文传输）。
+- MCP：`CX_MCP_TIMEOUT_MS` 设置单次请求超时（默认 60000）；`CX_MCP_MAX_BYTES` 设置单次工具结果上限。
+
 CI / 脚本场景建议全程环境变量，不落盘：
 
 ```bash
@@ -160,16 +168,16 @@ CX_BASE_URL=http://localhost:3000 CX_PAT=cx_pat_xxx.yyy cx query KPI
 ## 能力边界（设计约束）
 
 - **只读**：服务端 `readonlyMiddleware` 架构层拦截，CLI 无任何写操作
-- **PAT 自助管理**：需要会话登录，请使用 Web 端（NL2SQL 已按 CX-ADR-020 冻结，见 `docs/decisions/20260903-ai-native-os-mainline.md`）
+- **PAT 自助管理**：需要会话登录，请使用 Web 端（NL2SQL 已按 CX-ADR-020 冻结，见主仓 `docs/decisions/20260903-ai-native-os-mainline.md`）
 - 路由能力由服务端 `route-catalog` 唯一事实源驱动，服务端新增查询路由后 CLI 自动可用：`cx query <新路由>` 在本地缓存未命中时会自动强制刷新缓存重试一次（无需手动 `cx routes --refresh`，缓存 TTL 24h）
 
-详见 `开发文档/PAT_GUIDE.md`。
+详见主仓 `开发文档/PAT_GUIDE.md`（cx-cli 镜像中不包含）。
 
 ## 独立仓库镜像（alongor666/cx-cli）
 
 本子目录是 SSOT，[`alongor666/cx-cli`](https://github.com/alongor666/cx-cli) 是从此自动同步的**只读镜像**。Windows 用户下载文档 / 截图脚本 / `index.html` 在 `manual/` 子目录。
 
-**同步机制**：[`.github/workflows/sync-cx-cli.yml`](../.github/workflows/sync-cx-cli.yml) 监听 `main` 分支 `cli/**` 路径变更，自动 squash 同步到 `cx-cli` main。`manual/` 也走该流水线。
+**同步机制**：主仓 `.github/workflows/sync-cx-cli.yml` 监听 `main` 分支 `cli/**` 路径变更，自动 squash 同步到 `cx-cli` main。`manual/` 也走该流水线。
 
 **不要直接改 cx-cli 仓库** — 任何改动会被下次同步覆盖。所有 PR 走 `alongor666/chexian-api`。
 

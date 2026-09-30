@@ -527,7 +527,7 @@
       <div class="step-nb">01</div>
       <div class="step-title">下载 exe</div>
       <div class="step-desc">
-        打开 GitHub Releases 下载链接，或使用 JSdelivr 加速链接下载 cx-windows.exe（51 MB）。
+        打开 GitHub Releases 下载 cx-windows-x64.exe（约 100 MB；ARM 设备选 arm64 版），并用官方 SHA256SUMS 校验。
       </div>
       <div class="callout">
         <div class="callout-src">链接</div>
@@ -721,7 +721,7 @@
   <div class="col" style="margin-top:5vh">
     <div class="split" style="margin-bottom:3vh">
       <div class="body-serif" style="font-weight:600;font-size:18px">Q: 下载速度慢</div>
-      <div class="body-zh">使用 JSdelivr 加速链接替代 GitHub 直链</div>
+      <div class="body-zh">使用组织批准的代理或同事代下载；jsDelivr 只能访问仓库文件、拿不到 Release 中的 exe。无论来源，都要用官方 SHA256SUMS 校验</div>
     </div>
 
     <div class="split" style="margin-bottom:3vh">
@@ -1028,7 +1028,7 @@ addEventListener('touchend',e=>{
 
 go(0);
 </script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="https://unpkg.com/lucide@1.49.0/dist/umd/lucide.min.js"></script>
 <script>lucide.createIcons();</script>
 
 <!-- ============ Motion One 动效引擎（本地优先,CDN 兜底） ============

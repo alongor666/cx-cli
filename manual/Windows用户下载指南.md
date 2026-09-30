@@ -31,10 +31,6 @@ ARM64 Windows 请把文件名改为 `cx-windows-arm64.exe`。同一发布页还�
 https://github.com/alongor666/cx-cli/tree/main/manual
 ```
 
-**国内镜像**：
-- GitHub 镜像：https://hub.fastgit.xyz/alongor666/cx-cli/tree/main/manual
-- 或使用 Gitee（需手动导入仓库）
-
 **使用方法**：
 1. 下载整个 `manual` 文件夹
 2. 打开 `manual/index.html` 查看使用指南
@@ -49,12 +45,9 @@ https://github.com/alongor666/cx-cli/tree/main/manual
 https://github.com/alongor666/cx-cli/releases
 ```
 
-**如果速度慢**，尝试以下镜像：
-
-| 镜像站 | 地址 | 说明 |
-|--------|------|------|
-| FastGit | https://hub.fastgit.xyz/alongor666/cx-cli/releases | 加速访问 |
-| GitHub Proxy | https://mirror.ghproxy.com/https://github.com/alongor666/cx-cli/releases | 代理加速 |
+**如果速度慢**：只使用组织批准的代理，**不要使用来路不明的第三方镜像站**。无论从哪里下载二进制，
+`SHA256SUMS` 都必须从上面的 github.com 官方地址获取并核对——若二进制与哈希清单来自同一个第三方站点，
+校验就失去了意义。
 
 ---
 
@@ -81,6 +74,10 @@ manual/
 
 ## 🔧 配置步骤
 
+> **推荐**：直接用一键安装脚本（自动下载、校验 SHA-256、安装到 `%LOCALAPPDATA%\Chexian\bin`，无需管理员权限）：
+> `irm https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.ps1 | iex`
+> 以下为手动安装步骤；两种方式选其一，避免机器上出现两份 cx.exe。
+
 ### 1. 下载并重命名 cx-windows-x64.exe
 
 从上面的官方发布地址下载 `cx-windows-x64.exe`，校验哈希后重命名为 `cx.exe`。
@@ -96,7 +93,7 @@ manual/
 
 1. 按 `Win + S` 搜索"编辑系统环境变量"
 2. 点击"环境变量"
-3. 在"系统变量"中找到"Path"，点击"编辑"
+3. 在"用户变量"中找到"Path"，点击"编辑"（改用户变量无需管理员权限）
 4. 点击"新建"，输入 `C:\tools\cx`
 5. 点击"确定"保存
 
@@ -124,9 +121,8 @@ GitHub 在国内访问较慢，原因是：
 - 带宽限制
 
 **解决方法**：
-- 使用组织批准的 GitHub Release 代理
-- 使用代理镜像（如 FastGit）
-- 使用 Gitee 等国内平台
+- 使用组织批准的 GitHub Release 代理（下载后务必用官方 `SHA256SUMS` 校验）
+- 找同事代下载后通过内部网盘传输（同样校验 SHA-256）
 
 ### Release 资产与仓库文件不同
 
@@ -134,38 +130,8 @@ GitHub 在国内访问较慢，原因是：
 `cdn.jsdelivr.net/gh/...` 仓库文件链接当作 Release 下载地址；应使用上面的
 `releases/latest/download/...` 官方链接或经过组织批准的代理。
 
-### FastGit 镜像
-
-**特点**：
-- GitHub 加速镜像
-- 实时同步
-- 无需注册
-
-**使用方法**：
-```
-原链接：https://github.com/alongor666/cx-cli
-
-镜像链接：https://hub.fastgit.xyz/alongor666/cx-cli
-```
-
-### Gitee 导入
-
-**步骤**：
-1. 注册 Gitee 账号：https://gitee.com
-2. 点击"从 GitHub / GitLab 导入仓库"
-3. 输入 GitHub 仓库地址：`https://github.com/alongor666/cx-cli`
-4. 等待导入完成（可能需要几分钟）
-5. 从 Gitee 下载文件
-
----
-
-## ⚡ 下载速度对比
-
-| 方式 | 预计速度 | 预计时间 |
-|------|---------|---------|
-| **FastGit 镜像** | 1-5 MB/s | 1-5 分钟 |
-| **GitHub 直连** | 50-500 KB/s | 10-30 分钟 |
-| **Gitee** | 2-10 MB/s | 10-30 秒 |
+> 注意：Gitee 等平台"导入仓库"只会复制源码，**不包含 Release 里的 exe**；第三方镜像站（如已停止服务的
+> FastGit）无法保证内容未被篡改，不要使用。
 
 ---
 
@@ -176,7 +142,7 @@ GitHub 在国内访问较慢，原因是：
 **问题**：浏览器提示下载失败
 
 **解决**：
-1. 尝试其他下载方式（CDN / 镜像）
+1. 使用组织批准的代理，或找同事代下载
 2. 检查网络连接
 3. 更换浏览器（Chrome / Edge）
 4. 使用下载工具（IDM / FDM）
@@ -186,18 +152,21 @@ GitHub 在国内访问较慢，原因是：
 **问题**：运行 cx.exe 提示文件损坏
 
 **解决**：
-1. 重新下载文件
-2. 检查文件大小（应该是 51 MB 左右）
-3. 使用 MD5 校验（如果提供）
+1. 重新下载文件（x64 版约 95–100 MB，大小明显偏小说明没下完）
+2. 用官方 `SHA256SUMS` 核对哈希：
+   ```powershell
+   Get-FileHash .\cx-windows-x64.exe -Algorithm SHA256
+   ```
+   输出的 Hash 须与 `SHA256SUMS` 中 `cx-windows-x64.exe` 那一行完全一致（发布不提供 MD5）
 
 ### Q3: 杀毒软件报警
 
 **问题**：杀毒软件提示病毒
 
 **解决**：
-1. 这是误报，可以添加到白名单
-2. 或从 GitHub 官方下载（更可信）
-3. 查看源码：https://github.com/alongor666/cx-cli
+1. **不要直接加白名单**。先确认文件来自 github.com 官方 Release，且 SHA-256 与官方 `SHA256SUMS` 一致
+2. 哈希一致时，未签名的单文件程序被启发式引擎误报较常见，可联系车险数据团队确认后再放行
+3. 哈希不一致：立即删除该文件，不要运行
 
 ### Q4: 下载速度还是很慢
 
