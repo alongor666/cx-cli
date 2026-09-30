@@ -15,6 +15,8 @@
   $repo = 'alongor666/cx-cli'
   $version = if ($env:CX_VERSION) { $env:CX_VERSION } else { 'latest' }
   $binDir = if ($env:CX_BIN_DIR) { $env:CX_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'Chexian\bin' }
+  # 归一成绝对路径（按 PS 当前位置解析、不做通配）：相对路径下 `& $cx` 会退回带通配的命令搜索
+  $binDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($binDir)
 
   $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     'ARM64' { 'arm64' }
@@ -40,18 +42,23 @@
 
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     $cx = Join-Path $binDir 'cx.exe'
-    Move-Item -Force "$tmp\$asset" "$cx.tmp"
+    # 路径一律按字面处理：CX_BIN_DIR 可能含 [ ] 等通配字符。Cmdlet 用 -LiteralPath；移动文件用
+    # [IO.File]::Move——Move-Item 的 -Destination 没有字面版本，仍会先做通配解析
+    Remove-Item -Force -LiteralPath "$cx.tmp" -ErrorAction SilentlyContinue
+    [IO.File]::Move("$tmp\$asset", "$cx.tmp")
     # Agent 拉起的 cx mcp 常驻时 cx.exe 被占用：Windows 允许重命名运行中的 exe、不允许覆盖，
     # 所以先把旧文件挪成 .old 再放新文件；.old 删不掉（仍在运行）就留到下次安装再清
-    if (Test-Path $cx) {
-      # 清掉历次残留的 .old / .old.<pid>（仍在运行的删不掉，静默跳过、下次再清）
-      Get-ChildItem -Path "$cx.old*" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-      $old = if (Test-Path "$cx.old") { "$cx.old.$PID" } else { "$cx.old" }  # 上轮 .old 仍被占用时换名
-      Move-Item -Force $cx $old
-      try { Move-Item -Force "$cx.tmp" $cx } catch { Move-Item -Force $old $cx; throw }  # 落位失败则还原旧版
-      Remove-Item -Force $old -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $cx) {
+      # 清掉历次残留的 cx.exe.old / cx.exe.old.<pid>（仍在运行的删不掉，静默跳过、下次再清）
+      Get-ChildItem -LiteralPath $binDir -Filter 'cx.exe.old*' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^cx\.exe\.old(\.\d+)?$' } |
+        ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
+      $old = if (Test-Path -LiteralPath "$cx.old") { "$cx.old.$PID" } else { "$cx.old" }  # 上轮 .old 仍被占用时换名
+      [IO.File]::Move($cx, $old)
+      try { [IO.File]::Move("$cx.tmp", $cx) } catch { [IO.File]::Move($old, $cx); throw }  # 落位失败则还原旧版
+      Remove-Item -Force -LiteralPath $old -ErrorAction SilentlyContinue
     } else {
-      Move-Item -Force "$cx.tmp" $cx
+      [IO.File]::Move("$cx.tmp", $cx)
     }
     Write-Host "✔ 已安装 $cx（$(& $cx --version)）"
   } finally {
@@ -68,12 +75,16 @@
   $ErrorActionPreference = 'Continue'
 
   # 「已登录」只认 ~/.chexian/config.json 里的令牌：Agent 进程不继承当前会话的 CX_PAT
+  # 环境变量是进程级（子作用域管不住）：用 finally 恢复，Ctrl+C 中断 whoami 也不会把调用者的 CX_PAT 清掉
   $envPat = $env:CX_PAT; $envBase = $env:CX_BASE_URL
-  Remove-Item Env:CX_PAT, Env:CX_BASE_URL -ErrorAction SilentlyContinue
-  & $cx whoami *> $null
-  $loggedIn = ($LASTEXITCODE -eq 0)
-  if ($null -ne $envPat) { $env:CX_PAT = $envPat }
-  if ($null -ne $envBase) { $env:CX_BASE_URL = $envBase }
+  try {
+    Remove-Item Env:CX_PAT, Env:CX_BASE_URL -ErrorAction SilentlyContinue
+    & $cx whoami *> $null
+    $loggedIn = ($LASTEXITCODE -eq 0)
+  } finally {
+    if ($null -ne $envPat) { $env:CX_PAT = $envPat }
+    if ($null -ne $envBase) { $env:CX_BASE_URL = $envBase }
+  }
   if ($loggedIn) {
     Write-Host '✔ 已登录（沿用 ~/.chexian/config.json 中的 PAT）'
   } else {
