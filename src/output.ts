@@ -84,12 +84,15 @@ function toCsv(rows: Record<string, unknown>[]): string {
 /**
  * CSV 公式注入防护（OWASP）：以 = + - @ Tab CR 开头的文本单元格在 Excel/WPS 中会被当公式执行
  * （如 =HYPERLINK(...) 外带数据）。只处理字符串单元格，数值列不受影响。
- * + / - 开头但只含数字、空格、. , % 与指数的文本（"-3.2%" "-1,234" "+86 138"）没有函数/引用，
+ * + / - 开头的格式化数值（"-3.2%" "-1,234" "+86 138" "-1.2万" "+5.1pp"，须含数字、单位走白名单）
+ * 以及单独的 "-" 占位没有函数/引用，
  * 构不成注入，原样保留——CSV 也是 Agent / pandas 的机器输入，不能为防护篡改业务值。
  */
+const SIGNED_VALUE = /^[+-]$|^[+-][\d.,% ]*\d[\d.,% ]*([eE][+-]?\d+)?(pp|bp|‰|万元?|亿元?|元|个百分点)?$/;
+
 export function neutralizeFormula(cell: string): string {
   if (/^[=@\t\r]/.test(cell)) return `'${cell}`;
-  if (/^[+-]/.test(cell) && !/^[+-][\d.,% ]*([eE][+-]?\d+)?$/.test(cell)) return `'${cell}`;
+  if (/^[+-]/.test(cell) && !SIGNED_VALUE.test(cell)) return `'${cell}`;
   return cell;
 }
 

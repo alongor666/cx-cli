@@ -107,7 +107,7 @@ describe('buildToolsFromRoutes', () => {
 
 describe('projectWhoami', () => {
   it('只保留数据范围相关字段', () => {
-    expect(Object.keys(projectWhoami({ username: 'u', email: 'e', passwordHash: 'h' })).sort()).toEqual(
+    expect(Object.keys(projectWhoami({ username: 'u', email: 'e', passwordHash: 'h' }) as object).sort()).toEqual(
       ['branchCode', 'branchScope', 'displayName', 'organization', 'role', 'tokenType', 'username', 'visibleBranches'],
     );
   });

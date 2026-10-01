@@ -21,7 +21,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../api.js', () => ({ cxGet: mocks.cxGet }));
-vi.mock('../config.js', () => ({ getCachePath: mocks.getCachePath, writeFileAtomic: mocks.writeFileAtomic }));
+vi.mock('../config.js', () => ({
+  getCachePath: mocks.getCachePath,
+  writeFileAtomic: mocks.writeFileAtomic,
+  loadConfig: () => ({ baseUrl: 'https://h.test' }),
+}));
 vi.mock('../exit-codes.js', () => ({ failWith: mocks.failWith }));
 vi.mock('../cli-state.js', () => ({ note: mocks.note }));
 vi.mock('fs', () => ({

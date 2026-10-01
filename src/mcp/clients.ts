@@ -5,7 +5,9 @@
  * cx login 的配置读，**任何客户端配置里都不出现令牌**。
  *
  * - Claude Code / Codex：调它们自带的 `mcp add/remove`（它们的配置文件会被运行中的进程并发改写，
- *   不直接动文件）；未装 CLI 即视为未检测到。
+ *   不直接动文件）；未装 CLI 即视为未检测到。add 失败需回滚时，原条目只从各自的配置文件
+ *   （~/.claude.json / ~/.codex/config.toml）无损读取——`mcp get` 的文本输出会把含空格的
+ *   路径拆散，读不到无损源时拒绝替换、提示手动处理，绝不把拆散的条目写回去。
  * - Cursor / Claude Desktop / ZCode：合并 JSON，写前备份 `<文件>.cx-bak`，原子替换，
  *   解析失败时拒绝写入（绝不覆盖用户配置）。
  */
@@ -161,6 +163,8 @@ export function cliAdapter(opts: {
   addArgs: (e: McpEntry) => string[]; removeArgs: string[]; getArgs: string[];
   /** 从 `<bin> mcp get` 输出里判断条目；拿不到精确命令时返回 null */
   parseEntry?: (out: string) => McpEntry | null;
+  /** 无损读现有条目（直读客户端配置文件）：返回原条目；null=配置里确认没有条目；undefined=文件在但读不出 */
+  readEntry?: () => McpEntry | null | undefined;
   run?: Runner;
 }): ClientAdapter {
   const run = opts.run ?? defaultRunner;
@@ -176,9 +180,37 @@ export function cliAdapter(opts: {
     },
     install(entry) {
       // 先删后加：重复执行幂等，也能把旧路径更新成新路径。add 失败时把原条目加回去，
-      // 不让一次失败的升级把用户原有的 chexian 配置删掉
+      // 不让一次失败的升级把用户原有的 chexian 配置删掉。
+      // 回滚用的原条目只认配置文件里的无损读取（readEntry）：`mcp get` 的文本输出把 args
+      // 按空格拼接，含空格的路径回滚重加会被拆坏（R11）。已有条目却读不到无损源、或无损源
+      // 与 mcp get 文本对不上时，宁可不动配置——提示用户手动处理。
       const got = run(opts.bin, opts.getArgs);
-      const previous = got.ok ? opts.parseEntry?.(got.stdout) ?? null : null;
+      const parsed = got.ok ? opts.parseEntry?.(got.stdout) ?? null : null;
+      let previous: McpEntry | null = null;
+      let refusal: string | null = null;
+      if (opts.readEntry) {
+        const lossless = opts.readEntry();
+        if (lossless === undefined) {
+          refusal = '无法从其配置文件无损读取原条目（文件损坏，或条目带 env 等回滚会丢失的配置项）';
+        } else if (parsed) {
+          if (lossless === null) refusal = '其用户级配置文件里没有该条目（可能配置在 local/project 等其他 scope）';
+          else if (!sameEntry(lossless, parsed)) refusal = '其配置文件与 mcp get 输出的条目不一致';
+          else previous = lossless;
+        } else {
+          // mcp get 没给出条目（命令失败/输出格式变化）：以配置文件为准兜底回滚，
+          // 避免 remove 后 add 失败时静默删掉用户条目
+          previous = lossless;
+        }
+      } else if (parsed) {
+        refusal = '该客户端没有可用的无损配置源';
+      }
+      if (refusal) {
+        throw new Error(
+          `${opts.label} 已配置 chexian，但${refusal}——cx 需要无损读到原条目才敢替换`
+          + `（\`${opts.bin} mcp get\` 的文本输出会把含空格的路径拆散，直接恢复可能改坏配置）。`
+          + `本次未做任何改动，请先运行 \`${opts.bin} mcp list\` 确认 chexian 条目及其 scope，手动移除后重试 cx mcp install`,
+        );
+      }
       run(opts.bin, opts.removeArgs);
       const r = run(opts.bin, opts.addArgs(entry));
       if (r.ok) return;
@@ -202,6 +234,113 @@ export function parseGetOutput(out: string): McpEntry | null {
   return { command: cmd, args: argsLine ? argsLine.split(/\s+/) : [] };
 }
 
+// ── CLI 型客户端配置文件的无损读取（回滚恢复只信这里，不信 mcp get 的有损文本） ──
+
+/** Claude Code user scope 的 MCP 条目存在 `~/.claude.json` 顶层 `mcpServers` */
+export function claudeJsonEntry(file: string): McpEntry | null | undefined {
+  if (!fs.existsSync(file)) return null;
+  try {
+    const doc: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const v = (doc as Json | null)?.mcpServers;
+    if (v === undefined || v === null) return null;
+    if (typeof v !== 'object' || Array.isArray(v)) return undefined;
+    const entry = (v as Json)[SERVER_NAME];
+    if (entry === undefined || entry === null) return null;
+    const e = entry as Json;
+    // 形状非法按"读不出"处理；额外字段里只容忍 claude 恒写的恒等键——type:"stdio" 与空 env，
+    // 丢了等于没丢；非空 env（回滚 re-add 只写 command/args 会丢用户环境变量）与其他键（cwd 等）仍拒绝
+    if (typeof e.command !== 'string' || !Array.isArray(e.args) || !e.args.every((x) => typeof x === 'string')) return undefined;
+    if (e.type !== undefined && e.type !== 'stdio') return undefined;
+    const env = e.env;
+    if (env !== undefined && env !== null
+      && (typeof env !== 'object' || Array.isArray(env) || Object.keys(env as Json).length > 0)) return undefined;
+    if (Object.keys(e).some((k) => k !== 'command' && k !== 'args' && k !== 'type' && k !== 'env')) return undefined;
+    return { command: e.command, args: e.args };
+  } catch {
+    return undefined;
+  }
+}
+
+const TOML_ESCAPES: Record<string, string> = { n: '\n', t: '\t', r: '\r', '"': '"', '\\': '\\' };
+
+/** TOML 单行字符串解码；不是单行可解码字符串、或含不认识的转义时返回 undefined（保守，宁可不读） */
+function tomlString(s: string): string | undefined {
+  const basic = s.match(/^"((?:[^"\\]|\\.)*)"$/);
+  if (basic) {
+    for (const m of basic[1].matchAll(/\\(.)/gs)) {
+      if (!(m[1] in TOML_ESCAPES)) return undefined;
+    }
+    return basic[1].replace(/\\(.)/gs, (_, c: string) => TOML_ESCAPES[c]);
+  }
+  const literal = s.match(/^'([^']*)'$/);
+  if (literal) return literal[1];
+  return undefined;
+}
+
+/** TOML 单行字符串数组解码；多行/嵌套/带行内注释等读不了的形式返回 undefined */
+function tomlStringArray(s: string): string[] | undefined {
+  const m = s.match(/^\[(.*)\]$/s);
+  if (!m) return undefined;
+  const segs = m[1].split(/("(?:[^"\\]|\\.)*"|'[^']*')/g);
+  const items: string[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    if (i % 2 === 1) { // 捕获组：字符串元素
+      const v = tomlString(seg);
+      if (v === undefined) return undefined;
+      items.push(v);
+    } else if (seg && !/^[\s,]+$/.test(seg)) return undefined; // 元素间只允许逗号/空白
+  }
+  return items;
+}
+
+/** 从 `~/.codex/config.toml` 抽 `[mcp_servers.<name>]` 的 command/args。
+ *  null=没有可识别的 chexian section；undefined=解析不了或条目带 command/args 之外的
+ *  字段（env 等）——回滚 re-add 只写 command/args 会丢字段，带额外字段的条目一律按读不出处理 */
+export function codexTomlEntry(raw: string, server = SERVER_NAME): McpEntry | null | undefined {
+  const esc = server.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const header = new RegExp(`^\\s*\\[mcp_servers\\.(?:"${esc}"|'${esc}'|${esc})\\]\\s*$`);
+  const descendant = new RegExp(`^\\s*\\[mcp_servers\\.(?:"${esc}"|'${esc}'|${esc})\\.`);
+  let inSection = false;
+  let hasExtra = false;
+  let command: string | undefined;
+  let args: string[] | undefined;
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (t.startsWith('[')) {
+      inSection = header.test(t);
+      if (!inSection && descendant.test(t)) hasExtra = true; // [mcp_servers.chexian.env] 之类的子表
+      continue;
+    }
+    if (!inSection || !t || t.startsWith('#')) continue;
+    const kv = t.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+?)\s*$/);
+    if (!kv) return undefined;
+    if (kv[1] === 'command') {
+      if (command !== undefined) return undefined;
+      command = tomlString(kv[2]);
+      if (command === undefined) return undefined;
+    } else if (kv[1] === 'args') {
+      if (args !== undefined) return undefined;
+      args = tomlStringArray(kv[2]);
+      if (args === undefined) return undefined;
+    } else {
+      hasExtra = true; // env/cwd 等额外键
+    }
+  }
+  if (command === undefined && args === undefined && !hasExtra) return null; // 没有 chexian section
+  if (command === undefined || args === undefined || hasExtra) return undefined;
+  return { command, args };
+}
+
+export function codexTomlEntryFromFile(file: string): McpEntry | null | undefined {
+  if (!fs.existsSync(file)) return null;
+  try {
+    return codexTomlEntry(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 export function defaultAdapters(home = os.homedir(), platform = process.platform, env = process.env): ClientAdapter[] {
   const desktopDir = platform === 'darwin'
     ? path.join(home, 'Library', 'Application Support', 'Claude')
@@ -215,6 +354,7 @@ export function defaultAdapters(home = os.homedir(), platform = process.platform
       removeArgs: ['mcp', 'remove', '--scope', 'user', SERVER_NAME],
       getArgs: ['mcp', 'get', SERVER_NAME],
       parseEntry: parseGetOutput,
+      readEntry: () => claudeJsonEntry(path.join(home, '.claude.json')),
     }),
     cliAdapter({
       id: 'codex', label: 'Codex', bin: 'codex',
@@ -222,6 +362,7 @@ export function defaultAdapters(home = os.homedir(), platform = process.platform
       removeArgs: ['mcp', 'remove', SERVER_NAME],
       getArgs: ['mcp', 'get', SERVER_NAME],
       parseEntry: parseGetOutput,
+      readEntry: () => codexTomlEntryFromFile(path.join(home, '.codex', 'config.toml')),
     }),
     jsonAdapter({
       id: 'cursor', label: 'Cursor', file: path.join(home, '.cursor', 'mcp.json'),

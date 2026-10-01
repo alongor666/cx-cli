@@ -44,6 +44,10 @@ export function deriveTokenId(token: string): string | undefined {
  * 非法时抛错（错误文案可直接展示给用户）。
  */
 export function normalizeBaseUrl(value: string): string {
+  // 空的 ? / #（"https://h?"）解析后 search/hash 为空串，下面的检查拦不住，但拼接后会吞掉 API 路径
+  if (/[?#]/.test(value)) {
+    throw new Error('baseUrl 不能带查询串或 # 锚点');
+  }
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -73,14 +77,35 @@ export function isInsecureBaseUrl(baseUrl: string): boolean {
   }
 }
 
-/** 只读文件中的配置（不含环境变量覆盖）。文件缺失/损坏返回 {}。 */
-export function loadFileConfig(): Partial<CxConfig> {
+/**
+ * 读文件原样对象：缺失 → {}；存在但读不了 / 不是 JSON 对象 → 抛错。
+ * 写入方据此拒绝覆盖——否则一次损坏或无权限读取就会让下一次写盘冲掉其中的令牌。
+ */
+function readFileConfigRaw(): Record<string, unknown> {
+  let raw: string;
   try {
-    const parsed = JSON.parse(fs.readFileSync(configFile(), 'utf-8')) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Partial<CxConfig>) : {};
-  } catch {
-    return {};
+    raw = fs.readFileSync(configFile(), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw new Error(`无法读取 ${configFile()}（${(err as Error).message}），为免覆盖其中的令牌已停止写入`);
   }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { /* 下面统一报错 */ }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${configFile()} 不是合法的 JSON 对象，为免覆盖其中的令牌已停止写入；请修复或删除该文件后重试`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** 只读文件中的配置（不含环境变量覆盖）。文件缺失/损坏返回 {}；类型不对的字段忽略。 */
+export function loadFileConfig(): Partial<CxConfig> {
+  let raw: Record<string, unknown>;
+  try { raw = readFileConfigRaw(); } catch { return {}; }
+  const cfg: Partial<CxConfig> = {};
+  for (const k of ['baseUrl', 'token', 'tokenId'] as const) {
+    if (typeof raw[k] === 'string') cfg[k] = raw[k];
+  }
+  return cfg;
 }
 
 export function loadConfig(): CxConfig {
@@ -107,7 +132,7 @@ export function hasPersistedToken(): boolean {
  * 返回写入后的文件配置。
  */
 export function updateFileConfig(patch: Partial<CxConfig>): Partial<CxConfig> {
-  const next: Record<string, unknown> = { ...loadFileConfig() };
+  const next: Record<string, unknown> = { ...readFileConfigRaw() };
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) delete next[k];
     else next[k] = v;
@@ -133,7 +158,7 @@ export function writeFileAtomic(link: string, content: string | Buffer): void {
   ensurePrivateDir(path.dirname(file));
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {
-    fs.writeFileSync(tmp, content, { mode: 0o600 });
+    fs.writeFileSync(tmp, content, { mode: 0o600, flag: 'wx' });
     fs.chmodSync(tmp, 0o600);
     fs.renameSync(tmp, file);
   } catch (err) {

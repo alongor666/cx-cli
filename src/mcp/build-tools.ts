@@ -77,11 +77,15 @@ function stripTrailingPeriod(s: string): string {
 /** 工具描述单段上限：描述会在 tools/list 时进入每个 Agent 的上下文，服务端文案不设防就是注入面 */
 export const MAX_DESCRIPTION_CHARS = 2000;
 
-/** 去掉控制字符与零宽/双向控制字符（不可见的指令夹带），并截断到上限 */
+/**
+ * 去掉不可见的指令夹带（保留 Tab / 换行）：控制符 Cc、格式符 Cf（零宽、双向控制含 isolate、软连字符、
+ * Unicode Tag 等）、变体选择符、Hangul 填充符，以及 Tag 区未分配码点；按码点截断到上限（不切断代理对）。
+ */
+const INVISIBLE = /(?![\t\n])[\p{Cc}\p{Cf}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}\u{E0000}-\u{E007F}\u3164\u115F\u1160\uFFA0]/gu;
+
 export function sanitizeText(s: string, max = MAX_DESCRIPTION_CHARS): string {
-  // eslint-disable-next-line no-control-regex
-  const clean = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g, '');
-  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+  const chars = Array.from(s.replace(INVISIBLE, ''));
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : chars.join('');
 }
 
 /** MCP 工具名须匹配 ^[a-zA-Z0-9_-]{1,64}$：非法字符替换为 _，超长截断 */
@@ -97,7 +101,9 @@ export function routeToTool(meta: RouteMeta): McpTool {
     properties[p.name] = {
       type: paramTypeToJsonSchema(p.type),
       description: p.type === 'date' ? `${desc} (date YYYY-MM-DD)` : desc,
-      ...(Array.isArray(p.enum) ? { enum: p.enum.map(String) } : {}),
+      // enum 只配 string：type:number 配字符串 enum 是无解 schema；空 enum 同样无解
+      ...(paramTypeToJsonSchema(p.type) === 'string' && Array.isArray(p.enum) && p.enum.length > 0
+        ? { enum: p.enum.map((v) => sanitizeText(String(v), 200)) } : {}),
     };
     if (p.required) required.push(p.name);
   }
@@ -111,7 +117,9 @@ export function routeToTool(meta: RouteMeta): McpTool {
   const caliberText = caliber.length > 0 ? ` 【${caliber.join('。')}。】` : '';
   return {
     name: toolNameForRoute(meta.key),
-    description: sanitizeText(`${stripTrailingPeriod(meta.summary)}. ${meta.description}${caliberText}`),
+    // 只截正文：口径/数据范围提示拼在末尾，整段截断会最先把它们砍掉
+    description: sanitizeText(`${stripTrailingPeriod(meta.summary)}. ${meta.description}`,
+      Math.max(0, MAX_DESCRIPTION_CHARS - caliberText.length)) + sanitizeText(caliberText),
     inputSchema: {
       type: 'object',
       properties,
@@ -130,7 +138,8 @@ export interface CatalogBuildResult {
 function isRouteParam(p: unknown): p is RouteParam {
   if (!p || typeof p !== 'object') return false;
   const o = p as Record<string, unknown>;
-  return typeof o.name === 'string' && o.name.length > 0
+  // 参数名直接成为 inputSchema 的属性名进入 Agent 上下文：只收普通标识符（服务端现有参数名全部满足）
+  return typeof o.name === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(o.name)
     && (o.description === undefined || typeof o.description === 'string')
     && (o.enum === undefined || Array.isArray(o.enum));
 }
@@ -143,7 +152,7 @@ function isRouteMeta(r: unknown): r is RouteMeta {
     && Array.isArray(o.parameters) && o.parameters.every(isRouteParam);
 }
 
-/** 纯函数：catalog 路由 → 工具。非 GET / 非 /api/ 路径 / 重名跳过，未知字段与缺口径告警，不静默 */
+/** 纯函数：catalog 路由 → 工具。非 GET / 非 /api/query/ 路径 / 重名跳过，未知字段与缺口径告警，不静默 */
 export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
   const warnings: string[] = [];
   const routes: RouteMeta[] = [];
@@ -157,8 +166,9 @@ export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
       warnings.push(`跳过非 GET 路由 ${raw.key}（method=${raw.method}）：MCP 通道只读`);
       continue;
     }
-    if (!raw.fullPath.startsWith('/api/')) {
-      warnings.push(`跳过 fullPath 不在 /api/ 下的路由 ${raw.key}: ${raw.fullPath.slice(0, 120)}`);
+    // 服务端契约：route-catalog 只下发 /api/query/* 路由
+    if (!raw.fullPath.startsWith('/api/query/')) {
+      warnings.push(`跳过 fullPath 不在 /api/query/ 下的路由 ${raw.key}: ${raw.fullPath.slice(0, 120)}`);
       continue;
     }
     const name = toolNameForRoute(raw.key);
@@ -177,13 +187,14 @@ export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
   return { tools: routes.map(routeToTool), routes, warnings };
 }
 
-export async function fetchAllTools(cfg: McpConfig): Promise<CatalogBuildResult> {
+/** raw：服务端原样下发的路由数组，供写本地缓存（与 CLI 共用，CLI 需要未经 MCP 过滤的全集） */
+export async function fetchAllTools(cfg: McpConfig): Promise<CatalogBuildResult & { raw: unknown[] }> {
   const resp = await mcpGet<unknown>(cfg, '/api/auth/route-catalog');
   const routes = (resp as { data?: { routes?: unknown } } | null)?.data?.routes;
   if (!Array.isArray(routes)) {
     throw new Error('route-catalog 响应形状异常：缺 data.routes 数组（服务端版本不兼容？）');
   }
-  return buildToolsFromRoutes(routes);
+  return { ...buildToolsFromRoutes(routes), raw: routes };
 }
 
 /**
@@ -226,12 +237,13 @@ export const WHOAMI_BINDING: DiscoveryToolBinding = {
   },
 };
 
-export async function buildDiscoveryTools(cfg: McpConfig): Promise<DiscoveryToolBinding[]> {
-  const [fieldsResp, metricsResp, presetsResp] = await Promise.all([
+/** fetchSummaries=false：服务端已不可达（catalog 走了缓存兜底）时跳过摘要拉取，不再白等一轮超时 */
+export async function buildDiscoveryTools(cfg: McpConfig, fetchSummaries = true): Promise<DiscoveryToolBinding[]> {
+  const [fieldsResp, metricsResp, presetsResp] = fetchSummaries ? await Promise.all([
     mcpGet<{ success: boolean; data: Array<{ id: string; groupable?: boolean }> }>(cfg, '/api/discover/fields').catch(() => null),
     mcpGet<{ success: boolean; data: Array<{ id: string; category: string }> }>(cfg, '/api/discover/metrics').catch(() => null),
     mcpGet<{ success: boolean; data: { vehicleQuickFilters: string[] } }>(cfg, '/api/discover/presets').catch(() => null),
-  ]);
+  ]) : [null, null, null];
 
   // 启动时摘要拉取失败就不写数字：宁可不说，也不给 LLM 一个陈旧的计数
   const fields = Array.isArray(fieldsResp?.data) ? fieldsResp.data : null;

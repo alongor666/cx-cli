@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  cliAdapter, defaultAdapters, jsonAdapter, parseGetOutput, selfEntry, SERVER_NAME, winQuote,
+  claudeJsonEntry, cliAdapter, codexTomlEntry, codexTomlEntryFromFile, defaultAdapters, jsonAdapter,
+  parseGetOutput, selfEntry, SERVER_NAME, winQuote,
   type ClientAdapter, type McpEntry, type Runner,
 } from '../mcp/clients.js';
 import { mcpInstallCommand, mcpUninstallCommand, pickAdapters } from '../commands/mcp.js';
@@ -131,18 +132,20 @@ describe('cliAdapter', () => {
     };
     return { run, calls };
   }
-  const make = (run: Runner) => cliAdapter({
+  // 不提供默认 readEntry：每个用例显式声明无损源语义（返回条目/null/undefined/不提供）
+  const make = (run: Runner, readEntry?: () => McpEntry | null | undefined) => cliAdapter({
     id: 'claude-code', label: 'Claude Code', bin: 'claude',
     addArgs: (e) => ['mcp', 'add', '--scope', 'user', SERVER_NAME, '--', e.command, ...e.args],
     removeArgs: ['mcp', 'remove', '--scope', 'user', SERVER_NAME],
     getArgs: ['mcp', 'get', SERVER_NAME],
     parseEntry: parseGetOutput,
+    readEntry,
     run,
   });
 
   it('install 先读原条目、再删后加，命令里不带 -e/PAT', () => {
     const { run, calls } = fakeRunner(true);
-    make(run).install(ENTRY);
+    make(run, () => ({ command: '/opt/cx/cx', args: ['mcp'] })).install(ENTRY);
     expect(calls).toEqual([
       ['claude', 'mcp', 'get', 'chexian'],
       ['claude', 'mcp', 'remove', '--scope', 'user', 'chexian'],
@@ -160,13 +163,231 @@ describe('cliAdapter', () => {
       if (args[1] === 'add') return { ok: ++adds > 1, stdout: adds > 1 ? '' : 'boom' };
       return { ok: true, stdout: '' };
     };
-    expect(() => make(run).install(ENTRY)).toThrow(/已恢复原条目/);
+    expect(() => make(run, () => ({ command: '/old/cx', args: ['mcp'] })).install(ENTRY)).toThrow(/已恢复原条目/);
     expect(calls.at(-1)).toEqual(['claude', 'mcp', 'add', '--scope', 'user', 'chexian', '--', '/old/cx', 'mcp']);
   });
 
   it('state 解析 mcp get 输出；未安装 CLI 视为未检测到', () => {
     expect(make(fakeRunner(true).run).state().entry).toEqual(ENTRY);
     expect(make(fakeRunner(false).run).state()).toMatchObject({ detected: false, entry: null });
+  });
+});
+
+describe('cliAdapter 回滚安全（含空格路径回归，R11）', () => {
+  const SPACE_ARGS = ['/Users/John Doe/cx/dist/index.js', 'mcp'];
+  // `claude mcp get` 的文本输出：args 用空格拼接，含空格的路径在这里被拆散（有损）
+  const lossyGetOut = `chexian:\n  Command: /opt/old/cx\n  Args: ${SPACE_ARGS.join(' ')}\n`;
+  const entryFile = () => {
+    const file = path.join(home, '.claude.json');
+    fs.mkdirSync(home, { recursive: true });
+    // claude mcp add 的真实写入形态：恒带 type:"stdio" 与空 env
+    fs.writeFileSync(file, JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'stdio', command: '/opt/old/cx', args: SPACE_ARGS, env: {} } },
+    }));
+    return file;
+  };
+  const runWithFailingAdd = (calls: string[][]) => {
+    let adds = 0;
+    const run: Runner = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[1] === 'get') return { ok: true, stdout: lossyGetOut };
+      if (args[1] === 'add') return { ok: ++adds > 1, stdout: adds > 1 ? '' : 'boom' };
+      return { ok: true, stdout: '' };
+    };
+    return run;
+  };
+
+  it('原条目路径含空格：回滚用配置文件读到的完整路径，不用 mcp get 拆散的文本', () => {
+    const file = entryFile();
+    const calls: string[][] = [];
+    expect(() => {
+      cliAdapter({
+        id: 'claude-code', label: 'Claude Code', bin: 'claude',
+        addArgs: (e) => ['mcp', 'add', '--scope', 'user', SERVER_NAME, '--', e.command, ...e.args],
+        removeArgs: ['mcp', 'remove', '--scope', 'user', SERVER_NAME],
+        getArgs: ['mcp', 'get', SERVER_NAME],
+        parseEntry: parseGetOutput,
+        readEntry: () => claudeJsonEntry(file),
+        run: runWithFailingAdd(calls),
+      }).install(ENTRY);
+    }).toThrow(/已恢复原条目/);
+    // 回滚 re-add 必须带完整路径，绝不能是 '/Users/John' + 'Doe/cx/...' 两截
+    expect(calls.at(-1)).toEqual(
+      ['claude', 'mcp', 'add', '--scope', 'user', 'chexian', '--', '/opt/old/cx', ...SPACE_ARGS],
+    );
+  });
+
+  it('读不到无损源时拒绝替换：不执行 remove/add，提示 mcp list 确认 scope 后手动处理', () => {
+    const calls: string[][] = [];
+    const run = runWithFailingAdd(calls);
+    expect(() => makeNoLossless(run).install(ENTRY))
+      .toThrow(/未做任何改动.*claude mcp list.*确认 chexian 条目及其 scope/s);
+    expect(calls).toEqual([['claude', 'mcp', 'get', 'chexian']]);
+  });
+
+  it('配置文件读出的条目与 mcp get 文本对不上（或确认无条目、或文件读不出）时同样拒绝替换', () => {
+    const run = runWithFailingAdd([]);
+    expect(() => makeNoLossless(run, () => ({ command: '/another/cx', args: ['mcp'] })).install(ENTRY))
+      .toThrow(/与 mcp get 输出的条目不一致/);
+    expect(() => makeNoLossless(run, () => null).install(ENTRY))
+      .toThrow(/没有该条目（可能配置在 local\/project 等其他 scope）/);
+    expect(() => makeNoLossless(run, () => undefined).install(ENTRY))
+      .toThrow(/无法从其配置文件无损读取原条目（文件损坏，或条目带 env 等回滚会丢失的配置项）/);
+  });
+
+  it('mcp get 失败或解析不出时，配置文件读到的条目兜底回滚（不静默删掉用户条目）', () => {
+    // get 失败（命令报错/超时/输出格式变化）：previous 以无损源为准，回滚用完整路径
+    for (const get of [false, true]) {
+      const calls: string[][] = [];
+      let adds = 0;
+      const run: Runner = (cmd, args) => {
+        calls.push([cmd, ...args]);
+        if (args[1] === 'get') return { ok: get, stdout: get ? 'http 型条目，无 Command 行' : 'boom' };
+        if (args[1] === 'add') return { ok: ++adds > 1, stdout: adds > 1 ? '' : 'boom' };
+        return { ok: true, stdout: '' };
+      };
+      expect(() => makeNoLossless(run, () => ({ command: '/opt/old/cx', args: SPACE_ARGS })).install(ENTRY))
+        .toThrow(/已恢复原条目/);
+      expect(calls.at(-1)).toEqual(
+        ['claude', 'mcp', 'add', '--scope', 'user', 'chexian', '--', '/opt/old/cx', ...SPACE_ARGS],
+      );
+    }
+  });
+
+  it('配置文件确认无条目且 mcp get 也没给出条目：照常安装，不拒绝', () => {
+    const run: Runner = (_cmd, args) => {
+      if (args[1] === 'get') return { ok: false, stdout: 'No MCP server found' };
+      return { ok: true, stdout: '' };
+    };
+    expect(() => makeNoLossless(run, () => null).install(ENTRY)).not.toThrow();
+  });
+
+  it('原本无条目：add 失败不回滚、错误里不提恢复（行为不变）', () => {
+    const calls: string[][] = [];
+    const run: Runner = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[1] === 'get') return { ok: false, stdout: 'No MCP server found' };
+      if (args[1] === 'add') return { ok: false, stdout: 'boom' };
+      return { ok: true, stdout: '' };
+    };
+    expect(() => makeNoLossless(run).install(ENTRY)).toThrow(/add 失败：boom$/);
+    expect(calls.filter((c) => c[2] === 'add')).toHaveLength(1);
+  });
+
+  // 不带 readEntry 的适配器（模拟只实现了 mcp 子命令的客户端）：回滚必须走拒绝路径
+  function makeNoLossless(run: Runner, readEntry?: () => McpEntry | null | undefined) {
+    return cliAdapter({
+      id: 'claude-code', label: 'Claude Code', bin: 'claude',
+      addArgs: (e) => ['mcp', 'add', '--scope', 'user', SERVER_NAME, '--', e.command, ...e.args],
+      removeArgs: ['mcp', 'remove', '--scope', 'user', SERVER_NAME],
+      getArgs: ['mcp', 'get', SERVER_NAME],
+      parseEntry: parseGetOutput,
+      readEntry,
+      run,
+    });
+  }
+});
+
+describe('claudeJsonEntry（~/.claude.json 无损读取）', () => {
+  const file = () => path.join(home, '.claude.json');
+
+  it('无文件 / 无 mcpServers / 无 chexian 条目 → null；有条目 → 原样返回', () => {
+    expect(claudeJsonEntry(file())).toBeNull();
+    fs.writeFileSync(file(), JSON.stringify({ theme: 'dark' }));
+    expect(claudeJsonEntry(file())).toBeNull();
+    fs.writeFileSync(file(), JSON.stringify({ mcpServers: { other: { command: 'x', args: [] } } }));
+    expect(claudeJsonEntry(file())).toBeNull();
+    const withSpace = { command: '/opt/old/cx', args: ['/Users/John Doe/cx/dist/index.js', 'mcp'] };
+    fs.writeFileSync(file(), JSON.stringify({ mcpServers: { [SERVER_NAME]: withSpace } }));
+    expect(claudeJsonEntry(file())).toEqual(withSpace);
+  });
+
+  it('坏 JSON / 条目形状不对 → undefined（读不出来，调用方拒绝替换）', () => {
+    fs.writeFileSync(file(), '{ broken');
+    expect(claudeJsonEntry(file())).toBeUndefined();
+    fs.writeFileSync(file(), JSON.stringify({ mcpServers: { [SERVER_NAME]: { command: 1 } } }));
+    expect(claudeJsonEntry(file())).toBeUndefined();
+  });
+
+  it('条目带 command/args 之外的字段（env 等）或 args 元素非字符串 → undefined：回滚会丢字段，不谎报恢复', () => {
+    fs.writeFileSync(file(), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { command: '/opt/cx', args: ['mcp'], env: { X: '1' } } },
+    }));
+    expect(claudeJsonEntry(file())).toBeUndefined();
+    fs.writeFileSync(file(), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { command: '/opt/cx', args: [1, 'mcp'] } },
+    }));
+    expect(claudeJsonEntry(file())).toBeUndefined();
+    fs.writeFileSync(file(), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'sse', command: '/opt/cx', args: ['mcp'], env: {} } },
+    }));
+    expect(claudeJsonEntry(file())).toBeUndefined();
+    fs.writeFileSync(file(), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { command: '/opt/cx', args: ['mcp'], cwd: '/tmp' } },
+    }));
+    expect(claudeJsonEntry(file())).toBeUndefined();
+  });
+
+  it('claude mcp add 的真实写入形态（恒带 type:"stdio" 与空 env）正常读出——重装/升级不得被拒（复审 NEW-1）', () => {
+    const realShape = { type: 'stdio', command: '/Users/John Doe/cx/dist/index.js', args: ['mcp'], env: {} };
+    fs.writeFileSync(file(), JSON.stringify({ mcpServers: { [SERVER_NAME]: realShape } }));
+    expect(claudeJsonEntry(file())).toEqual({
+      command: '/Users/John Doe/cx/dist/index.js', args: ['mcp'],
+    });
+    // 无 type / 无 env 的最小形态同样可读（env:null 等价缺失）
+    fs.writeFileSync(file(), JSON.stringify({ mcpServers: { [SERVER_NAME]: { command: '/a', args: ['mcp'], env: null } } }));
+    expect(claudeJsonEntry(file())).toEqual({ command: '/a', args: ['mcp'] });
+  });
+});
+
+describe('codexTomlEntry（~/.codex/config.toml 无损读取）', () => {
+  it('标准形态：提取 command/args，含空格路径与 Windows 路径转义', () => {
+    const toml = [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.chexian]',
+      'command = "/opt/old/cx"',
+      'args = ["/Users/John Doe/cx/dist/index.js", "mcp"]',
+      '',
+      '[mcp_servers.other]',
+      'command = "x"',
+      'args = ["y"]',
+    ].join('\n');
+    expect(codexTomlEntry(toml)).toEqual({
+      command: '/opt/old/cx', args: ['/Users/John Doe/cx/dist/index.js', 'mcp'],
+    });
+    const winToml = '[mcp_servers.chexian]\ncommand = "C:\\\\Program Files\\\\cx\\\\cx.exe"\nargs = ["mcp"]';
+    expect(codexTomlEntry(winToml)?.command).toBe('C:\\Program Files\\cx\\cx.exe');
+  });
+
+  it('引用的 server 名与 literal 字符串也认', () => {
+    expect(codexTomlEntry('[mcp_servers."chexian"]\ncommand = "/a"\nargs = []')).toEqual({ command: '/a', args: [] });
+    expect(codexTomlEntry("[mcp_servers.chexian]\ncommand = '/a b'\nargs = ['mcp']")).toEqual({ command: '/a b', args: ['mcp'] });
+  });
+
+  it('没有 chexian section → null；读不了的形态 → undefined', () => {
+    expect(codexTomlEntry('[mcp_servers.other]\ncommand = "x"\nargs = ["y"]')).toBeNull();
+    expect(codexTomlEntry('')).toBeNull();
+    expect(codexTomlEntry('[mcp_servers.chexian]\nargs = [\n  "mcp",\n]\ncommand = "/a"')).toBeUndefined(); // 多行数组
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "x"\nargs = ["mcp"] # 注释')).toBeUndefined(); // 行内注释
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = 42\nargs = []')).toBeUndefined(); // 非字符串
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "x"\nargs = [1]')).toBeUndefined(); // 非字符串数组
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "x"')).toBeUndefined(); // 只有 command 没有 args
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "a\\ubb"\nargs = []')).toBeUndefined(); // 不认识的转义
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "a\\bb"\nargs = []')).toBeUndefined(); // 不认识的转义
+  });
+
+  it('条目带额外字段（env 键或 env 子表）→ undefined：回滚会丢字段，不谎报恢复', () => {
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "x"\nargs = ["mcp"]\nenv = { X = "1" }')).toBeUndefined();
+    expect(codexTomlEntry('[mcp_servers.chexian]\ncommand = "x"\nargs = ["mcp"]\n[mcp_servers.chexian.env]\nX = "1"')).toBeUndefined();
+  });
+
+  it('codexTomlEntryFromFile：无文件 → null；坏形状 → undefined', () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    expect(codexTomlEntryFromFile(file)).toBeNull();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '[mcp_servers.chexian]\ncommand = "/opt/cx"\nargs = ["mcp"]');
+    expect(codexTomlEntryFromFile(file)).toEqual({ command: '/opt/cx', args: ['mcp'] });
   });
 });
 

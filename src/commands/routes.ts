@@ -6,7 +6,7 @@ import fs from 'fs';
 import kleur from 'kleur';
 import Table from 'cli-table3';
 import { cxGet } from '../api.js';
-import { getCachePath, writeFileAtomic } from '../config.js';
+import { getCachePath, writeFileAtomic, loadConfig } from '../config.js';
 import { failWith } from '../exit-codes.js';
 import { renderOutput, type OutputFormat } from '../output.js';
 import { note } from '../cli-state.js';
@@ -99,15 +99,23 @@ interface CatalogResp { success: boolean; data: { version: number; routes: Route
 const CACHE_TTL_MS = 24 * 3600 * 1000;
 const CACHE_FILE = 'catalog.json';
 
+/** 拉取失败时用过期缓存兜底的年龄上限（CLI 与 MCP 共用）：更旧的目录可能含已下线/改名的路由 */
+export const MAX_STALE_CACHE_MS = 7 * 24 * 3600 * 1000;
+
+export interface CatalogCache { routes: RouteMeta[]; ageMs: number }
+
 /**
- * 读本地 route-catalog 缓存（不看 TTL）。缺失/损坏/空返回 null。
- * 缓存里是服务端原样下发的路由对象，MCP 启动失败时也用它兜底。
+ * 读本地 route-catalog 缓存（不看 TTL）。缺失/损坏/空/来自其他 baseUrl/mtime 在未来 → null。
+ * 缓存里是服务端原样下发的路由对象，CLI 与 MCP 共用（MCP 启动失败时也用它兜底）。
  */
-export function readCatalogCache(): { routes: RouteMeta[]; ageMs: number } | null {
+export function readCatalogCache(baseUrl: string): CatalogCache | null {
   try {
     const cachePath = getCachePath(CACHE_FILE);
     const ageMs = Date.now() - fs.statSync(cachePath).mtimeMs;
-    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8')) as { routes?: unknown };
+    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8')) as { baseUrl?: unknown; routes?: unknown };
+    // 另一台服务端的目录（或未记 baseUrl 的旧缓存）不可信；mtime 明显在未来会让年龄为负、绕过上限
+    // （留 1 分钟容差：文件 mtime 精度高于 Date.now()，刚写完的缓存年龄可能是 -0.x ms）
+    if (cached.baseUrl !== baseUrl || ageMs < -60_000) return null;
     if (Array.isArray(cached.routes) && cached.routes.length > 0) {
       return { routes: cached.routes as RouteMeta[], ageMs };
     }
@@ -117,8 +125,19 @@ export function readCatalogCache(): { routes: RouteMeta[]; ageMs: number } | nul
   return null;
 }
 
+export function writeCatalogCache(baseUrl: string, routes: unknown[]): void {
+  writeFileAtomic(getCachePath(CACHE_FILE), JSON.stringify({ baseUrl, routes }, null, 2));
+}
+
+/** 拉取失败时能否用过期缓存兜底：鉴权/权限错误必须如实上抛（旧目录会掩盖令牌失效），缓存不超过 7 天 */
+export function canFallBackToCache(err: unknown, cached: CatalogCache | null): cached is CatalogCache {
+  const status = (err as { status?: number } | null)?.status;
+  return cached !== null && status !== 401 && status !== 403 && cached.ageMs <= MAX_STALE_CACHE_MS;
+}
+
 export async function fetchCatalog(forceRefresh = false): Promise<RouteMeta[]> {
-  const cached = readCatalogCache();
+  const { baseUrl } = loadConfig();
+  const cached = readCatalogCache(baseUrl);
   if (!forceRefresh && cached && cached.ageMs < CACHE_TTL_MS) return cached.routes;
 
   let routes: RouteMeta[];
@@ -130,15 +149,14 @@ export async function fetchCatalog(forceRefresh = false): Promise<RouteMeta[]> {
     }
     routes = fetched;
   } catch (err) {
-    // 网络/5xx 时用过期缓存兜底，但鉴权/权限错误必须如实上抛（否则会拿旧目录掩盖令牌失效）
-    const status = (err as { status?: number }).status;
-    if (cached && status !== 401 && status !== 403) {
+    // 显式刷新（--refresh / 未命中重试）失败必须如实报错，不能静默给旧目录
+    if (!forceRefresh && canFallBackToCache(err, cached)) {
       note(kleur.yellow(`⚠ route-catalog 拉取失败（${(err as Error).message}），改用 ${Math.round(cached.ageMs / 3600_000)}h 前的本地缓存`));
       return cached.routes;
     }
     throw err;
   }
-  writeFileAtomic(getCachePath(CACHE_FILE), JSON.stringify({ routes }, null, 2));
+  writeCatalogCache(baseUrl, routes);
   return routes;
 }
 

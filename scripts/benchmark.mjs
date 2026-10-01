@@ -51,12 +51,15 @@ const flags = {
 };
 
 const BASE_URL = flags.base.replace(/\/$/, '');
+/** 显式指定了 --base / CX_BENCH_BASE_URL：B 档子进程才改打该 host（见 spawnOnce） */
+const BASE_EXPLICIT = args.some((a) => a.startsWith('--base=')) || Boolean(process.env.CX_BENCH_BASE_URL);
 const HEALTH_URL = `${BASE_URL}/health`;
 
+/** nearest-rank 分位数：原 floor(q·n) 在 n=20、q=0.95 时取到的是最大值，单个离群点即触发 10% 回归门禁 */
 function quantile(arr, q) {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.floor(q * sorted.length));
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
   return sorted[idx];
 }
 
@@ -80,7 +83,8 @@ function spawnOnce(args) {
     const start = performance.now();
     const proc = spawn(SPAWN_CMD, [...SPAWN_PREFIX, ...args], {
       cwd: CLI_ROOT,
-      env: { ...process.env, NO_COLOR: '1' },
+      // 显式 --base 时 CX_BASE_URL 与 C/D/E 档同源：否则 --base 只作用于进程内档位，B 档仍打配置里的 host
+      env: { ...process.env, NO_COLOR: '1', ...(BASE_EXPLICIT ? { CX_BASE_URL: BASE_URL } : {}) },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let stderr = '';
@@ -205,6 +209,10 @@ async function main() {
 
   let B = SKIPPED;
   if (wants('B')) {
+    // cx health 会带 PAT 请求 /api/data/version：显式换 host 时不能默认拿配置文件里另一台主机的 PAT 去打
+    if (BASE_EXPLICIT && !process.env.CX_PAT) {
+      throw new Error('B 档：指定了 --base / CX_BENCH_BASE_URL 时须显式设置该主机的 CX_PAT（或用 --only 跳过 B 档）');
+    }
     console.error(`[bench] B 首次远程 cx health (warmup=${flags.warmup})...`);
     B = await benchSpawn('B', ['health', '-q'], flags.n, flags.warmup);
   }

@@ -25,7 +25,7 @@ export type ToolResult = CallToolResult;
 const textResult = (text: string, isError = false): ToolResult =>
   (isError ? { isError: true, content: [{ type: 'text', text }] } : { content: [{ type: 'text', text }] });
 
-/** 数据块保持纯 JSON（content[0]），提示单独成块追加在后，避免破坏解析 */
+/** 数据块独占 content[0]（未截断时是纯 JSON，截断时带截断说明头），提示单独成块追加在后 */
 const dataResult = (text: string, warning: string): ToolResult => ({
   content: warning
     ? [{ type: 'text', text }, { type: 'text', text: warning }]
@@ -35,19 +35,34 @@ const dataResult = (text: string, warning: string): ToolResult => ({
 /**
  * 参数只允许标量：对象/数组经 String() 会变成 "[object Object]" / "a,b" 静默发出去，
  * 服务端按默认值查询，LLM 拿到的是看似正常的错误答案。
+ * 数组不能一律按逗号拼：只有复数形式的多选参数（orgNames 等）服务端按逗号拆，单值参数拼接后
+ * 会变成等值比较查空，三态布尔的 '是,否' 更会让该维度整段从 WHERE 消失、返回未筛选全量。
+ * catalog 没有「是否多选」的机器可读标记，所以：单元素数组取唯一值，空数组按未传，多元素数组拒绝。
  */
 function checkArgs(rawArgs: unknown): { args: Args } | { error: string } {
   if (rawArgs === undefined || rawArgs === null) return { args: {} };
   if (typeof rawArgs !== 'object' || Array.isArray(rawArgs)) {
     return { error: '工具参数必须是对象（键值对）' };
   }
-  const bad = Object.entries(rawArgs as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined && v !== null && !['string', 'number', 'boolean'].includes(typeof v))
-    .map(([k]) => k);
+  const isScalar = (v: unknown) => ['string', 'number', 'boolean'].includes(typeof v);
+  const args: Args = {};
+  const bad: string[] = [];
+  const multi: string[] = [];
+  for (const [k, v] of Object.entries(rawArgs as Record<string, unknown>)) {
+    if (v === undefined || v === null) continue;
+    if (isScalar(v)) args[k] = v as Args[string];
+    else if (Array.isArray(v) && v.length === 0) continue;
+    else if (Array.isArray(v) && v.length === 1 && isScalar(v[0])) args[k] = v[0] as Args[string];
+    else if (Array.isArray(v) && v.every(isScalar)) multi.push(k);
+    else bad.push(k);
+  }
   if (bad.length > 0) {
     return { error: `参数只接受字符串/数字/布尔值，以下参数类型不合法: ${bad.join(', ')}` };
   }
-  return { args: rawArgs as Args };
+  if (multi.length > 0) {
+    return { error: `参数 ${multi.join(', ')} 传了多个值：多选参数（如 orgNames）请自行用英文逗号拼成一个字符串；单值参数只能传一个值` };
+  }
+  return { args };
 }
 
 /**

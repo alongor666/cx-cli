@@ -1,6 +1,6 @@
 /**
  * HTTP 客户端：包装 fetch，自动注入 Bearer + 标准错误处理。
- * 顶层 import './http.js' 启用全局 undici dispatcher（keep-alive + HTTP/2）。
+ * 每个 host 的首个请求前装配带 TLS 会话持久化的全局 dispatcher（见 http.ts，无 import 副作用）。
  */
 import kleur from 'kleur';
 import { attachTlsPersistence } from './http.js';
@@ -152,15 +152,15 @@ async function doRequest<T>(
 }
 
 /**
- * Retry-After 可以是秒数或 HTTP-date（RFC 9110 §10.2.3）。
- * 缺失/无法解析时按 60s 处理；负数截为 0。
+ * Retry-After 可以是秒数或 HTTP-date（RFC 9110 §10.2.3，发送方必须用 IMF-fixdate）。
+ * 缺失/无法解析（含负数、小数）时按 60s 处理；已过去的日期截为 0。
  */
 export function parseRetryAfter(header: string | null, now = Date.now()): number {
   if (header === null || header.trim() === '') return 60;
   const trimmed = header.trim();
   if (/^\d+$/.test(trimmed)) return Number(trimmed);
-  // HTTP-date 必含英文星期/月份；否则 V8 的宽松 Date.parse 会把 "1.5" 解析成 2001 年 → 立即重试
-  if (!/[a-z]/i.test(trimmed)) return 60;
+  // 只认 IMF-fixdate：V8 的宽松 Date.parse 会把 "1.5"、"Mon 1" 解析成 2001 年 → 立即重试
+  if (!/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(trimmed)) return 60;
   const at = Date.parse(trimmed);
   if (Number.isNaN(at)) return 60;
   return Math.max(0, Math.ceil((at - now) / 1000));

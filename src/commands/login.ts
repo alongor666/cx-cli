@@ -64,12 +64,17 @@ export async function loginCommand(opts: { token?: string; baseUrl?: string }): 
     console.error(kleur.yellow('⚠ 环境变量 CX_PAT 已设置且优先于配置文件：当前 shell 中的 cx 仍会使用 CX_PAT。'));
   }
   // 没传 --base-url 时校验走的是 CX_BASE_URL：令牌落盘后，未设该变量的进程（如 Agent 里的 cx mcp）会拿它去打文件里的 baseUrl
-  const fileBaseUrl = (loadFileConfig().baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
-  const envBaseUrl = process.env.CX_BASE_URL?.replace(/\/+$/, '');
+  const fileBaseUrl = canonicalBaseUrl(loadFileConfig().baseUrl ?? DEFAULT_BASE_URL);
+  const envBaseUrl = process.env.CX_BASE_URL ? canonicalBaseUrl(process.env.CX_BASE_URL) : undefined;
   if (envBaseUrl && envBaseUrl !== fileBaseUrl) {
     console.error(kleur.yellow(`⚠ 环境变量 CX_BASE_URL=${envBaseUrl} 优先于配置文件（baseUrl=${fileBaseUrl}）：`
       + `本次按 ${baseUrl} 校验；未设该变量的进程会用 ${fileBaseUrl}，必要时运行 cx config set baseUrl <url>`));
   }
+}
+
+/** 比较用：规范化失败（非法值）时退回去尾斜杠的原串 */
+function canonicalBaseUrl(value: string): string {
+  try { return normalizeBaseUrl(value); } catch { return value.replace(/\/+$/, ''); }
 }
 
 /** 管道输入：读到 EOF（不要求结尾换行；readline.question 在无换行 EOF 时不会回调） */

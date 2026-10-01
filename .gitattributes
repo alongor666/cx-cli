@@ -5,6 +5,6 @@
 # "#!/usr/bin/env node\r"，该包在 macOS / Linux 上执行时报
 # "env: node\r: No such file or directory"。
 #
-# 实际风险等级：低——npm 发布只在 CI（ubuntu）的全新 checkout 上进行，本机换行符不会渗入。
+# 实际风险等级：低——发布产物只在 CI（ubuntu）的全新 checkout 上构建（当前不发布 npm 包），本机换行符不会渗入。
 # 这是廉价保险，不是修复当前已存在的缺陷。
 * text=auto eol=lf

@@ -28,18 +28,21 @@ export function loadMcpConfig(): McpConfig {
 
 /**
  * 单次工具调用的 HTTP 超时：没有它，一个挂住的请求会让 Agent 的工具调用永久阻塞。
- * 取 120s 对齐服务端冷启动预热上限（STARTUP_DOMAIN_WARMUP_TIMEOUT_MS）——超时不重试，更短会让冷查询必然失败。
+ * 取 120s 对齐网关 proxy_read_timeout（deploy/nginx-fullstack.conf）：再长也会先被网关切断，更短会误杀慢查询。
  */
 const DEFAULT_TIMEOUT_MS = 120_000;
+/** setTimeout 上限（2^31−1 ms）：Node 下超出会溢出成立即超时 */
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_MS = 500;
-const RETRYABLE_STATUS = new Set([502, 503, 504]);
+// 504 不重试：网关已等满 proxy_read_timeout，说明是慢查询——重试只会让服务端把同一个重查询再算两遍
+const RETRYABLE_STATUS = new Set([502, 503]);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function resolveTimeoutMs(env = process.env): number {
   const n = Number(env.CX_MCP_TIMEOUT_MS);
-  return Number.isInteger(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
+  return Number.isInteger(n) && n > 0 && n <= MAX_TIMEOUT_MS ? n : DEFAULT_TIMEOUT_MS;
 }
 
 export async function mcpGet<T = unknown>(
@@ -51,7 +54,7 @@ export async function mcpGet<T = unknown>(
   const url = buildApiUrl(cfg.baseUrl, routePath, query);
   const timeoutMs = resolveTimeoutMs();
   let res: Response | undefined;
-  // 网络错误与 502/503/504 有限重试（GET 幂等）；超时不重试，避免把单次调用拖到数倍超时
+  // 网络错误与 502/503 有限重试（GET 幂等）；超时与 504 不重试，避免把单次调用拖到数倍超时
   for (let attempt = 1; ; attempt++) {
     try {
       res = await fetch(url, {
@@ -78,7 +81,8 @@ export async function mcpGet<T = unknown>(
     let body: any = null;
     try { body = await res.json(); } catch { /* ignore */ }
     const msg = body?.error?.message ?? `HTTP ${res.status}`;
-    throw new Error(`API ${res.status}: ${msg}`);
+    // 带 status：调用方按状态码判断（如 401/403 不走缓存兜底），不去匹配错误文案
+    throw Object.assign(new Error(`API ${res.status}: ${msg}`), { status: res.status });
   }
   try {
     return (await res.json()) as T;

@@ -26,6 +26,7 @@ import {
   validateAnalysisResult,
   validateBranchSelection,
   versionAtLeast,
+  type AnalysisCapability,
 } from '../commands/analyze.js';
 
 afterEach(() => {
@@ -34,7 +35,7 @@ afterEach(() => {
   mocks.cxGetWithMeta.mockReset();
 });
 
-const capabilities = [{
+const capabilities: AnalysisCapability[] = [{
   id: 'operating-trend', name: '经营趋势', description: 'trend', path: '/trend',
   fullPath: '/api/query/trend', requiredParams: ['startDate', 'endDate'],
   allowedParams: ['startDate', 'endDate', 'granularity', 'targetBranch'],

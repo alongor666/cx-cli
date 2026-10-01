@@ -11,6 +11,8 @@
 # 变量若写在顶层会永久留在用户会话；子作用域让任何退出路径（正常 / return / throw）都不外溢
 & {
   $ErrorActionPreference = 'Stop'
+  # Windows PowerShell 5.1：进度条会让约 100MB 的下载慢数倍（看起来像卡死）
+  $ProgressPreference = 'SilentlyContinue'
 
   $repo = 'alongor666/cx-cli'
   $version = if ($env:CX_VERSION) { $env:CX_VERSION } else { 'latest' }
@@ -28,6 +30,9 @@
 
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("cx-install-" + [Guid]::NewGuid())
   New-Item -ItemType Directory -Path $tmp | Out-Null
+  # 老系统默认可能不含 TLS 1.2。SecurityProtocol 是进程级（子作用域管不住）：下载完在 finally 里恢复
+  $origTls = [Net.ServicePointManager]::SecurityProtocol
+  [Net.ServicePointManager]::SecurityProtocol = $origTls -bor [Net.SecurityProtocolType]::Tls12
   try {
     Write-Host "下载 $asset（$version）…"
     Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile "$tmp\SHA256SUMS"
@@ -40,12 +45,21 @@
     if ($expected -ne $actual) { throw "SHA-256 不匹配（期望 $expected，实际 $actual），已中止" }
     Write-Host '✔ SHA-256 校验通过'
 
+
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     $cx = Join-Path $binDir 'cx.exe'
     # 路径一律按字面处理：CX_BIN_DIR 可能含 [ ] 等通配字符。Cmdlet 用 -LiteralPath；移动文件用
     # [IO.File]::Move——Move-Item 的 -Destination 没有字面版本，仍会先做通配解析
-    Remove-Item -Force -LiteralPath "$cx.tmp" -ErrorAction SilentlyContinue
-    [IO.File]::Move("$tmp\$asset", "$cx.tmp")
+    # 暂存名用 .exe 后缀且放在安装目录：.tmp 不能直接运行，%TEMP% 常被 AppLocker / SRP / EDR 拦截执行
+    $staged = Join-Path $binDir 'cx.new.exe'
+    Remove-Item -Force -LiteralPath $staged -ErrorAction SilentlyContinue
+    [IO.File]::Move("$tmp\$asset", $staged)
+    # 落位前先试跑：坏二进制（系统不兼容）不得顶替可用的旧版
+    $newVersion = & $staged --version
+    if ($LASTEXITCODE -ne 0) {
+      Remove-Item -Force -LiteralPath $staged -ErrorAction SilentlyContinue
+      throw "下载的 $asset 无法在本机运行（系统不兼容？），未改动现有安装"
+    }
     # Agent 拉起的 cx mcp 常驻时 cx.exe 被占用：Windows 允许重命名运行中的 exe、不允许覆盖，
     # 所以先把旧文件挪成 .old 再放新文件；.old 删不掉（仍在运行）就留到下次安装再清
     if (Test-Path -LiteralPath $cx) {
@@ -55,13 +69,14 @@
         ForEach-Object { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue }
       $old = if (Test-Path -LiteralPath "$cx.old") { "$cx.old.$PID" } else { "$cx.old" }  # 上轮 .old 仍被占用时换名
       [IO.File]::Move($cx, $old)
-      try { [IO.File]::Move("$cx.tmp", $cx) } catch { [IO.File]::Move($old, $cx); throw }  # 落位失败则还原旧版
+      try { [IO.File]::Move($staged, $cx) } catch { [IO.File]::Move($old, $cx); throw }  # 落位失败则还原旧版
       Remove-Item -Force -LiteralPath $old -ErrorAction SilentlyContinue
     } else {
-      [IO.File]::Move("$cx.tmp", $cx)
+      [IO.File]::Move($staged, $cx)
     }
-    Write-Host "✔ 已安装 $cx（$(& $cx --version)）"
+    Write-Host "✔ 已安装 $cx（$newVersion）"
   } finally {
+    [Net.ServicePointManager]::SecurityProtocol = $origTls
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
   }
 
