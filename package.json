@@ -1,6 +1,6 @@
 {
   "name": "@chexian/cli",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "chexian-api 只读 CLI（PAT 鉴权，cx query/login/whoami/mcp）",
   "license": "UNLICENSED",
   "repository": {
