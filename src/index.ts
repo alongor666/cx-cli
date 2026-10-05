@@ -327,6 +327,14 @@ mcp
   });
 
 mcp
+  .command('http')
+  .description('启动 Streamable HTTP MCP server（ChatGPT 等远端客户端；CX_MCP_HTTP_TOKEN 必填，不暴露 SQL 直通）')
+  .action(async () => {
+    const { runMcpHttpServer } = await import('./mcp/http.js');
+    await runMcpHttpServer(pkg.version);
+  });
+
+mcp
   .command('install')
   .description('自检后把 cx mcp 写进本机 Agent 配置（配置中不含 PAT）')
   .option('--client <ids>', '逗号分隔：claude-code,codex,cursor,claude-desktop,zcode（默认自动检测）')

@@ -65,6 +65,18 @@ cx mcp uninstall                         # 移除条目（PAT 另用 cx logout �
 
 JSON 文件写前备份为 `<文件>.cx-bak`，原子替换；文件不是合法 JSON 时拒绝写入。条目统一为 `{"command": "<cx 绝对路径>", "args": ["mcp"]}`，升级只需替换二进制。单次工具结果默认上限 100000 字节（超限按行截断并明示），可用 `CX_MCP_MAX_BYTES` 调整。
 
+### 远端客户端（ChatGPT 等）：`cx mcp http`
+
+stdio 之外还有 Streamable HTTP 入口 `cx mcp http`，给只接受远端 HTTPS 端点的客户端（ChatGPT 开发者模式 connector）。监听地址拒绝 `0.0.0.0` 等通配值（不校验内网/公网归属——公网暴露交给你自己的反向代理策略，默认 127.0.0.1）；访问令牌 `CX_MCP_HTTP_TOKEN`（≥32 字符，`openssl rand -hex 32`）以 `Authorization: Bearer` 或 URL 路径 `/mcp/<令牌>` 携带——ChatGPT 的 connector 不支持自定义请求头，用后者（代价：反向代理须关闭该路径的访问日志）。该入口与 stdio 共用同一份工具面，但**不暴露 SQL 直通工具**（`cx_query_sql`，CX-ADR-f03914）。
+
+```bash
+CX_MCP_HTTP_TOKEN=$(openssl rand -hex 32) cx mcp http    # 默认 127.0.0.1:8788；HOST/PORT 环境变量可调
+curl -s -X POST "http://127.0.0.1:8788/mcp/<同令牌>" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'    # 本地自测
+```
+
+生产部署（VPS 常驻 + nginx 反代 + 专用账号 PAT）见部署 runbook；数据身份仍由 `cx login` 的 PAT 决定，行级权限 / 审计 / 限流与 Web 端同源。
+
 ## 仓库内开发运行
 
 ```bash

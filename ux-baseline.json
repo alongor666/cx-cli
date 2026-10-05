@@ -1,7 +1,7 @@
 {
   "version": 1,
   "_doc": "cx CLI 用户体验黄金标准基线。--check 强校验渲染快照零漂移 + 一致性无新增违规。",
-  "measured_at": "2026-09-29T22:35:57.905Z",
+  "measured_at": "2026-10-05T15:03:21.485Z",
   "runner": "tsx",
   "dimensions": {
     "consistency": {
@@ -215,7 +215,7 @@
           ],
           "doc": "mcp 帮助",
           "exitCode": 0,
-          "stdout": "Usage: cx mcp [options] [command]\n\nMCP server（stdio）：把只读查询路由暴露给 Claude Code / Codex / Cursor 等 Agent\n\nOptions:\n  -h, --help           display help for command\n\nCommands:\n  serve                启动 stdio MCP server（Agent 配置里写 `cx mcp` 即可；PAT 复用 cx\n                       login）\n  install [options]    自检后把 cx mcp 写进本机 Agent 配置（配置中不含 PAT）\n  uninstall [options]  从本机 Agent 配置移除 chexian 条目（不清 PAT，需要时再 cx logout）\n  status               查看各 Agent 是否已配置 cx mcp\n  help [command]       display help for command",
+          "stdout": "Usage: cx mcp [options] [command]\n\nMCP server（stdio）：把只读查询路由暴露给 Claude Code / Codex / Cursor 等 Agent\n\nOptions:\n  -h, --help           display help for command\n\nCommands:\n  serve                启动 stdio MCP server（Agent 配置里写 `cx mcp` 即可；PAT 复用 cx\n                       login）\n  http                 启动 Streamable HTTP MCP server（ChatGPT\n                       等远端客户端；CX_MCP_HTTP_TOKEN 必填，不暴露 SQL 直通）\n  install [options]    自检后把 cx mcp 写进本机 Agent 配置（配置中不含 PAT）\n  uninstall [options]  从本机 Agent 配置移除 chexian 条目（不清 PAT，需要时再 cx logout）\n  status               查看各 Agent 是否已配置 cx mcp\n  help [command]       display help for command",
           "stderr": ""
         },
         "help-completion": {
