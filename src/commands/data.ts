@@ -12,6 +12,8 @@ import { failWith } from '../exit-codes.js';
 
 const SUB_ENDPOINTS = {
   version: '/api/data/version',
+  // files 是管理面端点（数据文件清单）：PAT 通道自 CX-ADR-a946bf 起一律 403，
+  // 本子命令恒失败属预期效果；退役/保留随 CLI 迭代另议（#1427）。
   files: '/api/data/files',
   metadata: '/api/data/metadata',
 } as const;
