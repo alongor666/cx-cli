@@ -164,6 +164,11 @@ describe('routeRequest / redactPath（纯函数）', () => {
     expect(redactPath(`/mcp/${TOKEN}?x=1`)).toBe('/mcp/***?x=1');
     expect(redactPath('/mcp')).toBe('/mcp');
   });
+
+  it('多段形态全遮蔽（部署验收实测 P1 #1421：token 在非首段曾完整落 journald）', () => {
+    expect(redactPath(`/mcp/junk/${TOKEN}`)).toBe('/mcp/***');
+    expect(redactPath(`/mcp/a/b/${TOKEN}?x=1`)).toBe('/mcp/***?x=1');
+  });
 });
 
 describe('httpConfigFromEnv · 无令牌即不对外服务', () => {

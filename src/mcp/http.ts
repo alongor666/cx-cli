@@ -116,7 +116,8 @@ export function routeRequest(url: string | undefined, authorization: string | un
 
 /** 日志用：路径里的令牌段打码 */
 export function redactPath(url: string | undefined): string {
-  return (url ?? '/').replace(/^\/mcp\/[^/?#]+/, '/mcp/***');
+  // 打码整个路径部分（非仅首段，部署验收实测 P1 #1421）：token 出现在任何段都不落日志
+  return (url ?? '/').replace(/^\/mcp\/[^?#]*/, '/mcp/***');
 }
 
 export interface HttpHandlerDeps {
