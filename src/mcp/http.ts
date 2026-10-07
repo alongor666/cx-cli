@@ -128,7 +128,7 @@ export interface HttpHandlerDeps {
 
 const deniedResult = (toolName: string): ToolResult => ({
   isError: true,
-  content: [{ type: 'text', text: `工具 ${toolName} 在本入口被禁用（CX-ADR-f03914：HTTP 入口不暴露 SQL 直通）` }],
+  content: [{ type: 'text', text: `工具 ${toolName} 在本入口被禁用（CX-ADR-f03914：HTTP 入口不暴露 SQL 直通与保单级中收台账 ledger）` }],
 });
 
 /** 请求处理器：鉴权 → 剔除名单双面生效（列表过滤 + 调用拦截）→ 每请求新建 Server 壳 + 无状态传输 */

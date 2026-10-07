@@ -328,7 +328,7 @@ mcp
 
 mcp
   .command('http')
-  .description('启动 Streamable HTTP MCP server（ChatGPT 等远端客户端；CX_MCP_HTTP_TOKEN 必填，不暴露 SQL 直通）')
+  .description('启动 Streamable HTTP MCP server（ChatGPT 等远端客户端；CX_MCP_HTTP_TOKEN 必填，不暴露 SQL 直通与保单级台账 ledger）')
   .action(async () => {
     const { runMcpHttpServer } = await import('./mcp/http.js');
     await runMcpHttpServer(pkg.version);

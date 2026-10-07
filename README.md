@@ -67,7 +67,7 @@ JSON 文件写前备份为 `<文件>.cx-bak`，原子替换；文件不是合法
 
 ### 远端客户端（ChatGPT 等）：`cx mcp http`
 
-stdio 之外还有 Streamable HTTP 入口 `cx mcp http`，给只接受远端 HTTPS 端点的客户端（ChatGPT 开发者模式 connector）。监听地址拒绝 `0.0.0.0` 等通配值（不校验内网/公网归属——公网暴露交给你自己的反向代理策略，默认 127.0.0.1）；访问令牌 `CX_MCP_HTTP_TOKEN`（≥32 字符，`openssl rand -hex 32`）以 `Authorization: Bearer` 或 URL 路径 `/mcp/<令牌>` 携带——ChatGPT 的 connector 不支持自定义请求头，用后者（代价：反向代理须关闭该路径的访问日志）。该入口与 stdio 共用同一份工具面，但**不暴露 SQL 直通工具**（`cx_query_sql`，CX-ADR-f03914）。
+stdio 之外还有 Streamable HTTP 入口 `cx mcp http`，给只接受远端 HTTPS 端点的客户端（ChatGPT 开发者模式 connector）。监听地址拒绝 `0.0.0.0` 等通配值（不校验内网/公网归属——公网暴露交给你自己的反向代理策略，默认 127.0.0.1）；访问令牌 `CX_MCP_HTTP_TOKEN`（≥32 字符，`openssl rand -hex 32`）以 `Authorization: Bearer` 或 URL 路径 `/mcp/<令牌>` 携带——ChatGPT 的 connector 不支持自定义请求头，用后者（代价：反向代理须关闭该路径的访问日志）。该入口与 stdio 共用同一份工具面，但**不暴露 SQL 直通工具与保单级中收台账工具**（`cx_query_sql` 与 `cx_query_network_outlet_ledger`——后者投影行级 VIN 明细，CX-ADR-f03914 剔除名单同步收窄）。
 
 ```bash
 CX_MCP_HTTP_TOKEN=$(openssl rand -hex 32) cx mcp http    # 默认 127.0.0.1:8788；HOST/PORT 环境变量可调
