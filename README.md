@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/inst
 irm https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.ps1 | iex          # Windows
 ```
 
-只装 cx 不接 Agent：加环境变量 `CX_SKIP_MCP=1`；固定安装的二进制版本：`CX_VERSION=v1.4.1`（安装脚本本身始终取 `main` 上的最新版）。
+只装 cx 不接 Agent：加环境变量 `CX_SKIP_MCP=1`；固定安装的二进制版本：`CX_VERSION=v1.5.1`（安装脚本本身始终取 `main` 上的最新版）。
 
 手动安装：从 [Releases](https://github.com/alongor666/cx-cli/releases) 下载对应平台文件（单文件自包含，60–100MB，覆盖 macOS / Linux(glibc) / Windows 的 x64 与 arm64，无需 Node）。
 
