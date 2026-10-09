@@ -30,7 +30,7 @@
 **适合人群**：希望完全控制截图过程
 
 **操作步骤**：
-1. 按照 `截图指南.md` 的 21 章节详细说明
+1. 按照 `截图指南.md` 的逐章详细说明
 2. 在 Windows 上手动执行 10 个命令
 3. 使用截图工具（Win+Shift+S）截取命令行窗口
 4. 将截图保存到 `images/` 目录，替换占位符
@@ -89,7 +89,7 @@ xdg-open index.html    # Linux
 
 ## 生成工具
 
-本手册由 [`magazine-web-ppt`](https://github.com/yourusername/magazine-web-ppt) skill 生成。
+本手册由 magazine-web-ppt skill 生成。
 
 ---
 

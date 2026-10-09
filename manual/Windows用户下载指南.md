@@ -107,7 +107,7 @@ manual/
 cx --version
 ```
 
-应该显示：`1.1.0` 或更高版本号
+应该显示：与 [Releases](https://github.com/alongor666/cx-cli/releases) 最新版本一致的版本号
 
 ---
 

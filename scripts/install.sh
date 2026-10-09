@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/alongor666/cx-cli/main/scripts/install.sh | sh
 #
 # 可选环境变量：
-#   CX_VERSION=v1.4.0     固定版本（默认 latest）
+#   CX_VERSION=v1.5.1     固定版本（默认 latest）
 #   CX_BIN_DIR=~/bin      安装目录（默认 ~/.local/bin）
 #   CX_MCP_CLIENTS=cursor,claude-code   只写这些 Agent（默认自动检测）
 #   CX_SKIP_MCP=1         只装 cx，不写 Agent 配置
