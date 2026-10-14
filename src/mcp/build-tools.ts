@@ -102,7 +102,7 @@ export function toolNameForRoute(key: string): string {
  * 路由域 → MCP 工具名族前缀（catalog fullPath 域允许清单 + 独立域命名 SSOT）。
  * '/api/query' 是存量缺省域（工具名沿用 key 派生的 cx_query_<key>，不可动——改了等于
  * 全量工具改名）；新增独立只读域在此登记（服务端侧字段 = query-routes-metadata.ts 的
- * domainPrefix），工具名 = <族前缀>_<path 裸段>（首段，剥 path 参数占位符）。
+ * domainPrefix），工具名 = <族前缀>_<path 裸段>（见 domainToolName）。
  * 例：'/api/danan-feed' + '/new-arrivals' → cx_danan_feed_new_arrivals（大案平台拆仓 P1）。
  */
 export const MCP_DOMAIN_TOOL_PREFIXES: Readonly<Record<string, string>> = {
@@ -117,12 +117,22 @@ export function isKnownMcpRouteDomain(fullPath: string): boolean {
   );
 }
 
-/** 独立域路由的工具名：<族前缀>_<path 首段>（'/claim/:claimNo' → 'cx_danan_feed_claim'；
- * 连字符归一为下划线，与查询域 key 派生的下划线风格一致）。 */
+/**
+ * 独立域路由的工具名：<族前缀>_<path 段>（连字符归一为下划线，与查询域 key 派生的下划线
+ * 风格一致）。段取法（拆仓 P1.5 起）：首段恒入名；**第二段是静态段（非 ':param' 占位符）
+ * 时并入**——单段路径与 path 参数路径名不变（'/new-arrivals' → cx_danan_feed_new_arrivals、
+ * '/claim/:claimNo' → cx_danan_feed_claim，P1 既有三工具零改名），多级静态路径取两段
+ * 防撞名（'/aggregate/dashboard-amount' 与 '/aggregate/pattern' 若只取首段会同撞
+ * cx_danan_feed_aggregate，buildToolsFromRoutes 的重名闸会把第二条静默剔除出 MCP 面）。
+ * 更深层级（第三段起）不并入：本仓独立域最深两级。
+ */
 function domainToolName(domainPrefix: string, path: string): string {
   const family = MCP_DOMAIN_TOOL_PREFIXES[domainPrefix];
-  const segment = path.replace(/^\//, '').split('/')[0] ?? '';
-  return `${family}_${segment.replace(/[^a-zA-Z0-9_]/g, '_')}`.slice(0, 64);
+  const segments = path.replace(/^\//, '').split('/');
+  const parts = [segments[0] ?? ''];
+  const second = segments[1];
+  if (second !== undefined && second !== '' && !second.startsWith(':')) parts.push(second);
+  return `${family}_${parts.map((s) => s.replace(/[^a-zA-Z0-9_]/g, '_')).join('_')}`.slice(0, 64);
 }
 
 /**

@@ -59,9 +59,16 @@ const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '0:0:0:0:0:0:0:0', ''])
  * 行级值（DSH 生产实测确认真 VIN 可出站），与 SQL 直通同属 L2 出站面，一并剔除。
  * 硬编码、无环境变量放行——放开须先修裁定（append-only）。新增明细类路由时须同步本名单
  * 与 tests/api/route-catalog-mcp-contract.test.ts 的对账断言。
- * 大案 feed 三工具（拆仓 P1 · 2026-10-14）同判据入名单：claim 级快照/变更行含
+ * 大案 feed claim 级三工具（拆仓 P1 · 2026-10-14）同判据入名单：claim 级快照/变更行含
  * vehicle_frame_no/subject_plate_no/salesman_name 等行级敏感值，且 /changes 的 old/new
- * 值同样携带——整族剔除（stdio 面不受影响，新应用后端走 PAT 直连 feed API）。
+ * 值同样携带——剔除（stdio 面不受影响，新应用后端走 PAT 直连 feed API）。
+ * 大案 feed 聚合族三工具（拆仓 P1.5 · 2026-10-14：aggregate_dashboard_amount /
+ * aggregate_pattern / sync_status）**不入名单、出 HTTP 面**，判据：① 前端投影无
+ * vehicle_frame_no/subject_plate_no/salesman_name/policy_no 行级值——P1 剔除判据的
+ * 敏感类全不含；② pattern 的 anomalies.claimNos 是赔案号业务键（非 VIN/车牌/人名类
+ * 直接身份标识），每桶上限 50，主仓内同面（P9 端点）已是登录即可见，不构成新敏感面；
+ * ③ 聚合值（金额/件数/占比）与 HTTP 面既有分析工具同级。判据由契约测试
+ * route-catalog-mcp-contract.test.ts「claim 级三工具剔除 / 聚合族三工具放行」双向锁定。
  */
 export const HTTP_EXCLUDED_TOOLS: ReadonlySet<string> = new Set([
   'cx_query_sql',
