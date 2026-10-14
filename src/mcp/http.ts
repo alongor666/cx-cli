@@ -73,9 +73,9 @@ const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '0:0:0:0:0:0:0:0', ''])
 export const HTTP_EXCLUDED_TOOLS: ReadonlySet<string> = new Set([
   'cx_query_sql',
   'cx_query_network_outlet_ledger',
-  'cx_danan_feed_new_arrivals',
-  'cx_danan_feed_changes',
-  'cx_danan_feed_claim',
+  'cx_hunch_feed_new_arrivals',
+  'cx_hunch_feed_changes',
+  'cx_hunch_feed_claim',
 ]);
 
 /** 从环境变量读 HTTP 配置；任何缺项或越界都抛错说明怎么填，不猜默认值（端口与回环地址除外） */

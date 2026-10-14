@@ -20,35 +20,35 @@ describe('buildToolsFromRoutes 护栏', () => {
     expect(r.warnings.join('\n')).toMatch(/形状异常/);
   });
 
-  it('fullPath 不在已登记 MCP 路由域下的路由被跳过（防止令牌发往别处）；已登记独立域（danan-feed）放行', () => {
+  it('fullPath 不在已登记 MCP 路由域下的路由被跳过（防止令牌发往别处）；已登记独立域（hunch-feed）放行', () => {
     const r = buildToolsFromRoutes([
       { ...base, fullPath: 'https://evil.test/api/x' },
       { ...base, key: 'AUTH', fullPath: '/api/auth/tokens' },
-      { ...base, key: 'DANAN_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/claim/:claimNo' },
+      { ...base, key: 'HUNCH_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/hunch-feed', fullPath: '/api/hunch-feed/claim/:claimNo' },
     ]);
     // 未登记域整条跳过并告警（安全意图不变：默认拒绝，域清单 = MCP_DOMAIN_TOOL_PREFIXES）
-    expect(r.tools.map((t) => t.name)).toEqual(['cx_danan_feed_claim']);
+    expect(r.tools.map((t) => t.name)).toEqual(['cx_hunch_feed_claim']);
     expect(r.warnings.join('\n')).toMatch(/不在已登记 MCP 路由域下/);
   });
 
   it('独立域多级静态路径取两段防撞名（拆仓 P1.5）：/aggregate/* 双工具各自成名且零告警；path 参数路径（首段+占位符）名不变', () => {
     const mk = (key: string, path: string): RouteMeta => ({
-      ...base, key, path, domainPrefix: '/api/danan-feed', fullPath: `/api/danan-feed${path}`,
+      ...base, key, path, domainPrefix: '/api/hunch-feed', fullPath: `/api/hunch-feed${path}`,
     });
     const r = buildToolsFromRoutes([
-      mk('DANAN_FEED_NEW_ARRIVALS', '/new-arrivals'),
-      mk('DANAN_FEED_AGGREGATE_DASHBOARD_AMOUNT', '/aggregate/dashboard-amount'),
-      mk('DANAN_FEED_AGGREGATE_PATTERN', '/aggregate/pattern'),
-      mk('DANAN_FEED_SYNC_STATUS', '/sync-status'),
-      mk('DANAN_FEED_CLAIM', '/claim/:claimNo'),
+      mk('HUNCH_FEED_NEW_ARRIVALS', '/new-arrivals'),
+      mk('HUNCH_FEED_AGGREGATE_DASHBOARD_AMOUNT', '/aggregate/dashboard-amount'),
+      mk('HUNCH_FEED_AGGREGATE_PATTERN', '/aggregate/pattern'),
+      mk('HUNCH_FEED_SYNC_STATUS', '/sync-status'),
+      mk('HUNCH_FEED_CLAIM', '/claim/:claimNo'),
     ]);
-    // 只取首段时两个 /aggregate/* 会同撞 cx_danan_feed_aggregate——重名闸静默剔除第二条（P1.5 修复）
+    // 只取首段时两个 /aggregate/* 会同撞 cx_hunch_feed_aggregate——重名闸静默剔除第二条（P1.5 修复）
     expect(r.tools.map((t) => t.name)).toEqual([
-      'cx_danan_feed_new_arrivals',
-      'cx_danan_feed_aggregate_dashboard_amount',
-      'cx_danan_feed_aggregate_pattern',
-      'cx_danan_feed_sync_status',
-      'cx_danan_feed_claim',
+      'cx_hunch_feed_new_arrivals',
+      'cx_hunch_feed_aggregate_dashboard_amount',
+      'cx_hunch_feed_aggregate_pattern',
+      'cx_hunch_feed_sync_status',
+      'cx_hunch_feed_claim',
     ]);
     expect(r.warnings).toEqual([]);
   });

@@ -199,9 +199,9 @@ describe('HTTP_EXCLUDED_TOOLS · 工具面红线', () => {
     expect([...HTTP_EXCLUDED_TOOLS]).toEqual([
       'cx_query_sql',
       'cx_query_network_outlet_ledger',
-      'cx_danan_feed_new_arrivals',
-      'cx_danan_feed_changes',
-      'cx_danan_feed_claim',
+      'cx_hunch_feed_new_arrivals',
+      'cx_hunch_feed_changes',
+      'cx_hunch_feed_claim',
     ]);
   });
 
@@ -218,15 +218,15 @@ describe('HTTP_EXCLUDED_TOOLS · 工具面红线', () => {
         summary: '网点台账明细', description: 'd', parameters: [], tags: [],
       },
       {
-        key: 'DANAN_FEED_NEW_ARRIVALS', path: '/new-arrivals', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/new-arrivals', method: 'GET',
+        key: 'HUNCH_FEED_NEW_ARRIVALS', path: '/new-arrivals', domainPrefix: '/api/hunch-feed', fullPath: '/api/hunch-feed/new-arrivals', method: 'GET',
         summary: '大案新进', description: 'd', parameters: [], tags: [],
       },
       {
-        key: 'DANAN_FEED_CHANGES', path: '/changes', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/changes', method: 'GET',
+        key: 'HUNCH_FEED_CHANGES', path: '/changes', domainPrefix: '/api/hunch-feed', fullPath: '/api/hunch-feed/changes', method: 'GET',
         summary: '大案变更', description: 'd', parameters: [], tags: [],
       },
       {
-        key: 'DANAN_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/claim/:claimNo', method: 'GET',
+        key: 'HUNCH_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/hunch-feed', fullPath: '/api/hunch-feed/claim/:claimNo', method: 'GET',
         summary: '大案单案', description: 'd', parameters: [], tags: [],
       },
     ];

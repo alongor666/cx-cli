@@ -81,7 +81,7 @@ function pathParamNames(template: string): string[] {
 }
 
 export function createCallToolHandler(deps: CallToolDeps) {
-  // 工具名反查与生成同函数（mcpToolNameForRoute）——独立域（cx_danan_feed_* 等）与查询域
+  // 工具名反查与生成同函数（mcpToolNameForRoute）——独立域（cx_hunch_feed_* 等）与查询域
   // （cx_query_*）在此统一，两侧各写一遍映射就是 Unknown tool 漂移源。
   const routesByToolName = new Map(deps.routes.map((r) => [mcpToolNameForRoute(r), r]));
   const bindingsByToolName = new Map(deps.bindings.map((b) => [b.tool.name, b]));
