@@ -5,7 +5,7 @@
  */
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpConfig } from './api.js';
-import { toolNameForRoute, type DiscoveryToolBinding, type RouteMeta } from './build-tools.js';
+import { mcpToolNameForRoute, type DiscoveryToolBinding, type RouteMeta } from './build-tools.js';
 import { applyPathParams } from '../path-params.js';
 import { formatResult } from './format-result.js';
 
@@ -81,7 +81,9 @@ function pathParamNames(template: string): string[] {
 }
 
 export function createCallToolHandler(deps: CallToolDeps) {
-  const routesByToolName = new Map(deps.routes.map((r) => [toolNameForRoute(r.key), r]));
+  // 工具名反查与生成同函数（mcpToolNameForRoute）——独立域（cx_danan_feed_* 等）与查询域
+  // （cx_query_*）在此统一，两侧各写一遍映射就是 Unknown tool 漂移源。
+  const routesByToolName = new Map(deps.routes.map((r) => [mcpToolNameForRoute(r), r]));
   const bindingsByToolName = new Map(deps.bindings.map((b) => [b.tool.name, b]));
 
   return async (toolName: string, rawArgs: unknown): Promise<ToolResult> => {

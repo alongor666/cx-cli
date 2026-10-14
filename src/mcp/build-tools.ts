@@ -19,6 +19,11 @@ export interface RouteMeta {
   key: string;
   path: string;
   fullPath: string;
+  /**
+   * 独立域前缀（大案 feed 域先例，拆仓 P1）：缺省 undefined = 查询域（/api/query）。
+   * 命名族切换与入集判据见 MCP_DOMAIN_TOOL_PREFIXES / mcpToolNameForRoute。
+   */
+  domainPrefix?: string;
   /** 仅 GET 会被映射为工具；其余方法跳过并告警（MCP 通道只读） */
   method: string;
   summary: string;
@@ -42,7 +47,7 @@ export interface RouteMeta {
  * 服务端新增字段 → 契约测试红 → 必须在这里登记并决定是否拼进工具描述。
  */
 export const KNOWN_CATALOG_FIELDS: readonly string[] = [
-  'key', 'path', 'fullPath', 'method', 'summary', 'description', 'parameters',
+  'key', 'path', 'fullPath', 'domainPrefix', 'method', 'summary', 'description', 'parameters',
   'timeWindow', 'timeWindowLabel', 'timeWindowNote', 'dataScope', 'uiRetired', 'tags',
 ];
 
@@ -93,6 +98,44 @@ export function toolNameForRoute(key: string): string {
   return `cx_query_${key.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`.slice(0, 64);
 }
 
+/**
+ * 路由域 → MCP 工具名族前缀（catalog fullPath 域允许清单 + 独立域命名 SSOT）。
+ * '/api/query' 是存量缺省域（工具名沿用 key 派生的 cx_query_<key>，不可动——改了等于
+ * 全量工具改名）；新增独立只读域在此登记（服务端侧字段 = query-routes-metadata.ts 的
+ * domainPrefix），工具名 = <族前缀>_<path 裸段>（首段，剥 path 参数占位符）。
+ * 例：'/api/danan-feed' + '/new-arrivals' → cx_danan_feed_new_arrivals（大案平台拆仓 P1）。
+ */
+export const MCP_DOMAIN_TOOL_PREFIXES: Readonly<Record<string, string>> = {
+  '/api/query': 'cx_query',
+  '/api/danan-feed': 'cx_danan_feed',
+};
+
+/** fullPath 是否落在任一已登记域前缀下（buildToolsFromRoutes 的入集判据）。 */
+export function isKnownMcpRouteDomain(fullPath: string): boolean {
+  return Object.keys(MCP_DOMAIN_TOOL_PREFIXES).some(
+    (domain) => fullPath === domain || fullPath.startsWith(`${domain}/`),
+  );
+}
+
+/** 独立域路由的工具名：<族前缀>_<path 首段>（'/claim/:claimNo' → 'cx_danan_feed_claim'；
+ * 连字符归一为下划线，与查询域 key 派生的下划线风格一致）。 */
+function domainToolName(domainPrefix: string, path: string): string {
+  const family = MCP_DOMAIN_TOOL_PREFIXES[domainPrefix];
+  const segment = path.replace(/^\//, '').split('/')[0] ?? '';
+  return `${family}_${segment.replace(/[^a-zA-Z0-9_]/g, '_')}`.slice(0, 64);
+}
+
+/**
+ * 统一命名入口（tools 生成与 call 反查必须同函数——两侧各写一遍就是漂移源）：
+ * 查询域走存量 key 派生（cx_query_<key>）；登记了 domainPrefix 的独立域走 path 段派生。
+ */
+export function mcpToolNameForRoute(meta: { key: string; path: string; domainPrefix?: string }): string {
+  if (meta.domainPrefix && meta.domainPrefix !== '/api/query' && MCP_DOMAIN_TOOL_PREFIXES[meta.domainPrefix]) {
+    return domainToolName(meta.domainPrefix, meta.path);
+  }
+  return toolNameForRoute(meta.key);
+}
+
 export function routeToTool(meta: RouteMeta): McpTool {
   const properties: Record<string, { type: string; description: string; enum?: string[] }> = {};
   const required: string[] = [];
@@ -116,7 +159,7 @@ export function routeToTool(meta: RouteMeta): McpTool {
   if (meta.dataScope) caliber.push(DATA_SCOPE_HINT);
   const caliberText = caliber.length > 0 ? ` 【${caliber.join('。')}。】` : '';
   return {
-    name: toolNameForRoute(meta.key),
+    name: mcpToolNameForRoute(meta),
     // 只截正文：口径/数据范围提示拼在末尾，整段截断会最先把它们砍掉
     description: sanitizeText(`${stripTrailingPeriod(meta.summary)}. ${meta.description}`,
       Math.max(0, MAX_DESCRIPTION_CHARS - caliberText.length)) + sanitizeText(caliberText),
@@ -152,7 +195,7 @@ function isRouteMeta(r: unknown): r is RouteMeta {
     && Array.isArray(o.parameters) && o.parameters.every(isRouteParam);
 }
 
-/** 纯函数：catalog 路由 → 工具。非 GET / 非 /api/query/ 路径 / 重名跳过，未知字段与缺口径告警，不静默 */
+/** 纯函数：catalog 路由 → 工具。非 GET / 未登记域路径 / 重名跳过，未知字段与缺口径告警，不静默 */
 export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
   const warnings: string[] = [];
   const routes: RouteMeta[] = [];
@@ -166,12 +209,14 @@ export function buildToolsFromRoutes(rawRoutes: unknown[]): CatalogBuildResult {
       warnings.push(`跳过非 GET 路由 ${raw.key}（method=${raw.method}）：MCP 通道只读`);
       continue;
     }
-    // 服务端契约：route-catalog 只下发 /api/query/* 路由
-    if (!raw.fullPath.startsWith('/api/query/')) {
-      warnings.push(`跳过 fullPath 不在 /api/query/ 下的路由 ${raw.key}: ${raw.fullPath.slice(0, 120)}`);
+    // 服务端契约：route-catalog 只下发已登记域的路由（/api/query/* 与独立只读域，
+    // 域清单 = MCP_DOMAIN_TOOL_PREFIXES；新增独立域须两侧同步登记——服务端 domainPrefix
+    // 值 + 本表键，缺一侧这里就告警）
+    if (!isKnownMcpRouteDomain(raw.fullPath)) {
+      warnings.push(`跳过 fullPath 不在已登记 MCP 路由域下的路由 ${raw.key}: ${raw.fullPath.slice(0, 120)}`);
       continue;
     }
-    const name = toolNameForRoute(raw.key);
+    const name = mcpToolNameForRoute(raw);
     if (seenNames.has(name)) {
       warnings.push(`跳过重名路由 ${raw.key}：工具名 ${name} 已被占用`);
       continue;

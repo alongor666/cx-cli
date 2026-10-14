@@ -20,10 +20,15 @@ describe('buildToolsFromRoutes 护栏', () => {
     expect(r.warnings.join('\n')).toMatch(/形状异常/);
   });
 
-  it('fullPath 不在 /api/query/ 下的路由被跳过（防止令牌发往别处）', () => {
-    const r = buildToolsFromRoutes([{ ...base, fullPath: 'https://evil.test/api/x' }, { ...base, key: 'AUTH', fullPath: '/api/auth/tokens' }]);
-    expect(r.tools).toEqual([]);
-    expect(r.warnings.join('\n')).toMatch(/不在 \/api\/query\/ 下/);
+  it('fullPath 不在已登记 MCP 路由域下的路由被跳过（防止令牌发往别处）；已登记独立域（danan-feed）放行', () => {
+    const r = buildToolsFromRoutes([
+      { ...base, fullPath: 'https://evil.test/api/x' },
+      { ...base, key: 'AUTH', fullPath: '/api/auth/tokens' },
+      { ...base, key: 'DANAN_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/claim/:claimNo' },
+    ]);
+    // 未登记域整条跳过并告警（安全意图不变：默认拒绝，域清单 = MCP_DOMAIN_TOOL_PREFIXES）
+    expect(r.tools.map((t) => t.name)).toEqual(['cx_danan_feed_claim']);
+    expect(r.warnings.join('\n')).toMatch(/不在已登记 MCP 路由域下/);
   });
 
   it('工具名非法字符替换、截断到 64，重名只保留第一个并告警', () => {

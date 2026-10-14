@@ -59,8 +59,17 @@ const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '0:0:0:0:0:0:0:0', ''])
  * 行级值（DSH 生产实测确认真 VIN 可出站），与 SQL 直通同属 L2 出站面，一并剔除。
  * 硬编码、无环境变量放行——放开须先修裁定（append-only）。新增明细类路由时须同步本名单
  * 与 tests/api/route-catalog-mcp-contract.test.ts 的对账断言。
+ * 大案 feed 三工具（拆仓 P1 · 2026-10-14）同判据入名单：claim 级快照/变更行含
+ * vehicle_frame_no/subject_plate_no/salesman_name 等行级敏感值，且 /changes 的 old/new
+ * 值同样携带——整族剔除（stdio 面不受影响，新应用后端走 PAT 直连 feed API）。
  */
-export const HTTP_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(['cx_query_sql', 'cx_query_network_outlet_ledger']);
+export const HTTP_EXCLUDED_TOOLS: ReadonlySet<string> = new Set([
+  'cx_query_sql',
+  'cx_query_network_outlet_ledger',
+  'cx_danan_feed_new_arrivals',
+  'cx_danan_feed_changes',
+  'cx_danan_feed_claim',
+]);
 
 /** 从环境变量读 HTTP 配置；任何缺项或越界都抛错说明怎么填，不猜默认值（端口与回环地址除外） */
 export function httpConfigFromEnv(env: Readonly<Record<string, string | undefined>>): HttpConfig {

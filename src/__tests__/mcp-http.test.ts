@@ -195,13 +195,19 @@ describe('httpConfigFromEnv · 无令牌即不对外服务', () => {
 });
 
 describe('HTTP_EXCLUDED_TOOLS · 工具面红线', () => {
-  it('剔除名单 = SQL 直通 + 行级明细 ledger，别无其他（防止悄悄扩大剔除面）', () => {
-    expect([...HTTP_EXCLUDED_TOOLS]).toEqual(['cx_query_sql', 'cx_query_network_outlet_ledger']);
+  it('剔除名单 = SQL 直通 + 行级明细 ledger + 大案 feed 整族（claim 级行明细，拆仓 P1），别无其他（防止悄悄扩大剔除面）', () => {
+    expect([...HTTP_EXCLUDED_TOOLS]).toEqual([
+      'cx_query_sql',
+      'cx_query_network_outlet_ledger',
+      'cx_danan_feed_new_arrivals',
+      'cx_danan_feed_changes',
+      'cx_danan_feed_claim',
+    ]);
   });
 
   it('名单与真实工具名对账（复审 F2 / DSH F-1：SSOT 生成名必须命中名单，否则剔除静默失效）', () => {
-    // key/path 抄自 server/src/config/query-routes-metadata.ts（:978 SQL 直通、:1373 ledger 明细）——
-    // fixture 只搬最小集，改名的瞬间本测试红，黑名单失效不再静默
+    // key/path 抄自 server/src/config/query-routes-metadata.ts（SQL 直通 / ledger 明细 /
+    // 大案 feed 三条目，拆仓 P1）——fixture 只搬最小集，改名的瞬间本测试红，黑名单失效不再静默
     const routes: RouteMeta[] = [
       {
         key: 'SQL', path: '/sql', fullPath: '/api/query/sql', method: 'GET',
@@ -210,6 +216,18 @@ describe('HTTP_EXCLUDED_TOOLS · 工具面红线', () => {
       {
         key: 'NETWORK_OUTLET_LEDGER', path: '/network-outlet/ledger', fullPath: '/api/query/network-outlet/ledger', method: 'GET',
         summary: '网点台账明细', description: 'd', parameters: [], tags: [],
+      },
+      {
+        key: 'DANAN_FEED_NEW_ARRIVALS', path: '/new-arrivals', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/new-arrivals', method: 'GET',
+        summary: '大案新进', description: 'd', parameters: [], tags: [],
+      },
+      {
+        key: 'DANAN_FEED_CHANGES', path: '/changes', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/changes', method: 'GET',
+        summary: '大案变更', description: 'd', parameters: [], tags: [],
+      },
+      {
+        key: 'DANAN_FEED_CLAIM', path: '/claim/:claimNo', domainPrefix: '/api/danan-feed', fullPath: '/api/danan-feed/claim/:claimNo', method: 'GET',
+        summary: '大案单案', description: 'd', parameters: [], tags: [],
       },
     ];
     const generated = buildToolsFromRoutes(routes).tools.map((t) => t.name);

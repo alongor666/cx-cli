@@ -1,8 +1,9 @@
 /**
  * cx mcp — stdio MCP server for chexian-api
  *
- * 启动时拉 /api/auth/route-catalog，把 /api/query/* 路由全部映射为 MCP tools，
- * 另加 cx_discover_* 发现工具与 cx_whoami 身份工具。
+ * 启动时拉 /api/auth/route-catalog，把已登记路由域的路由映射为 MCP tools（/api/query/*
+ * → cx_query_*；独立只读域如 /api/danan-feed/* → cx_danan_feed_*，域清单与命名族见
+ * build-tools.ts MCP_DOMAIN_TOOL_PREFIXES），另加 cx_discover_* 发现工具与 cx_whoami 身份工具。
  *
  * 凭据复用 cx login（见 ./api.ts），Agent 的 mcpServers 配置只需：
  *   { "chexian": { "command": "<cx 绝对路径>", "args": ["mcp"] } }
