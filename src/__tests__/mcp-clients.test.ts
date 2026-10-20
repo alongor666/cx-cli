@@ -7,7 +7,7 @@ import {
   parseGetOutput, selfEntry, SERVER_NAME, winQuote,
   type ClientAdapter, type McpEntry, type Runner,
 } from '../mcp/clients.js';
-import { mcpInstallCommand, mcpUninstallCommand, pickAdapters } from '../commands/mcp.js';
+import { mcpInstallCommand, mcpStatusCommand, mcpUninstallCommand, pickAdapters } from '../commands/mcp.js';
 import { agentEnv, redactPat } from '../mcp/probe.js';
 
 const ENTRY: McpEntry = { command: '/opt/cx/cx', args: ['mcp'] };
@@ -288,6 +288,98 @@ describe('cliAdapter 回滚安全（含空格路径回归，R11）', () => {
   }
 });
 
+describe('cliAdapter.state() 无损精修（#1008 P3-3：结构面不再拆散，渲染不变）', () => {
+  const SPACE_ARGS = ['/Users/John Doe/cx/dist/index.js', 'mcp'];
+  const lossyGetOut = `chexian:\n  Command: /opt/old/cx\n  Args: ${SPACE_ARGS.join(' ')}\n`;
+  const PARSED = { command: '/opt/old/cx', args: ['/Users/John', 'Doe/cx/dist/index.js', 'mcp'] };
+  const mkRun = (getOut: string, getOk = true): Runner => (_cmd, args) => {
+    if (args[0] === '--version') return { ok: true, stdout: '' };
+    if (args[1] === 'get') return { ok: getOk, stdout: getOut };
+    return { ok: true, stdout: '' };
+  };
+  const mk = (run: Runner, readEntry?: () => McpEntry | null | undefined) => cliAdapter({
+    id: 'claude-code', label: 'Claude Code', bin: 'claude',
+    addArgs: (e) => ['mcp', 'add', '--scope', 'user', SERVER_NAME, '--', e.command, ...e.args],
+    removeArgs: ['mcp', 'remove', '--scope', 'user', SERVER_NAME],
+    getArgs: ['mcp', 'get', SERVER_NAME],
+    parseEntry: parseGetOutput,
+    readEntry,
+    run,
+  });
+  const losslessFile = () => {
+    const file = path.join(home, '.claude.json');
+    fs.writeFileSync(file, JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'stdio', command: '/opt/old/cx', args: SPACE_ARGS, env: {} } },
+    }));
+    return file;
+  };
+
+  it('无损源与 get 文本交叉验证一致：state().entry 携带完整空格路径（不再拆散）', () => {
+    const file = losslessFile();
+    expect(mk(mkRun(lossyGetOut), () => claudeJsonEntry(file)).state().entry)
+      .toEqual({ command: '/opt/old/cx', args: SPACE_ARGS });
+  });
+
+  it('readEntry=null（local scope，文件里没有条目）/ undefined（读不出）/ 未提供：保持 get 文本解析的原值', () => {
+    expect(mk(mkRun(lossyGetOut), () => null).state().entry).toEqual(PARSED);
+    expect(mk(mkRun(lossyGetOut), () => undefined).state().entry).toEqual(PARSED);
+    expect(mk(mkRun(lossyGetOut)).state().entry).toEqual(PARSED);
+  });
+
+  it('无损源与 get 文本对不上（配置已漂移）：不盲信文件，保持 get 解析原值', () => {
+    const file = losslessFile();
+    expect(mk(mkRun('chexian:\n  Command: /another/cx\n  Args: mcp\n'), () => claudeJsonEntry(file)).state().entry)
+      .toEqual({ command: '/another/cx', args: ['mcp'] });
+  });
+
+  it('get 解析不出条目（哨兵 (已配置)）：不做替换', () => {
+    const file = losslessFile();
+    expect(mk(mkRun('http 型条目，无 Command 行'), () => claudeJsonEntry(file)).state().entry)
+      .toEqual({ command: '(已配置)', args: [] });
+  });
+
+  // golden 字面量取自改前 HEAD cccffe507（rebase 后、本改动前）用同构造 fake runner 实跑 mcpStatusCommand 的输出（F2）；
+  // 等价性推导（sameEntry 等价替换对任意比较目标结果不变）是主防线，本快照是第二道保险；ANSI 色码剥离后比较
+  it('渲染回归：status 输出与改前逐字节一致（四场景；含空格 args/command 均无拆散文本）', () => {
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const out = () => spy.mock.calls.map((c) => String(c[0])).join('').replace(/\x1b\[[0-9;]*m/g, '');
+    const spaced: McpEntry = { command: '/usr/local/bin/bun', args: SPACE_ARGS };
+
+    // S1 配置一致（含空格 args）：无损精修开启（readEntry 指向与 get 文本交叉验证一致的 tmpdir 文件）
+    //   与关闭两个 adapter 输出相同——精修路径同样渲染「已配置」
+    const spacedFile = path.join(home, '.claude.json');
+    fs.writeFileSync(spacedFile, JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'stdio', command: spaced.command, args: SPACE_ARGS, env: {} } },
+    }));
+    const spacedGet = `chexian:\n  Command: ${spaced.command}\n  Args: ${spaced.args.join(' ')}\n`;
+    const refined = mk(mkRun(spacedGet), () => claudeJsonEntry(spacedFile));
+    expect(refined.state().entry).toEqual(spaced); // 前置：精修确实发生（否则下面只是重复 plain 的断言）
+    const plain = mk(mkRun(spacedGet));
+    mcpStatusCommand([refined], spaced);
+    expect(out()).toBe('当前 cx：/usr/local/bin/bun /Users/John Doe/cx/dist/index.js mcp\nClaude Code     已配置  claude mcp\n');
+    spy.mockClear();
+    mcpStatusCommand([plain], spaced);
+    expect(out()).toBe('当前 cx：/usr/local/bin/bun /Users/John Doe/cx/dist/index.js mcp\nClaude Code     已配置  claude mcp\n');
+    spy.mockClear();
+
+    // S2 args 变（command 同）
+    mcpStatusCommand([plain], { command: '/usr/local/bin/bun', args: ['/new/path/index.js', 'mcp'] });
+    expect(out()).toBe('当前 cx：/usr/local/bin/bun /new/path/index.js mcp\nClaude Code     已配置但指向 /usr/local/bin/bun（重跑 cx mcp install 更新）  claude mcp\n');
+    spy.mockClear();
+
+    // S3 配置 command 含空格（整行捕获，无损）
+    const binA = mk(mkRun('chexian:\n  Command: /Users/John Doe/cx/cx\n  Args: mcp\n'));
+    mcpStatusCommand([binA], { command: '/other/cx', args: ['mcp'] });
+    expect(out()).toBe('当前 cx：/other/cx mcp\nClaude Code     已配置但指向 /Users/John Doe/cx/cx（重跑 cx mcp install 更新）  claude mcp\n');
+    spy.mockClear();
+
+    // S4 未检测到
+    const nf: Runner = (_c, args) => ({ ok: args[0] !== '--version', stdout: '' });
+    mcpStatusCommand([mk(nf)], { command: '/usr/local/bin/cx', args: ['mcp'] });
+    expect(out()).toBe('当前 cx：/usr/local/bin/cx mcp\nClaude Code     未检测到  claude (未找到)\n');
+  });
+});
+
 describe('claudeJsonEntry（~/.claude.json 无损读取）', () => {
   const file = () => path.join(home, '.claude.json');
 
@@ -405,6 +497,58 @@ describe('defaultAdapters', () => {
     expect(ids).toEqual(['claude-code', 'codex', 'cursor', 'claude-desktop', 'zcode']);
     const win = defaultAdapters(home, 'win32', { APPDATA: 'C:\\AppData' }).find((a) => a.id === 'claude-desktop')!;
     expect(win.state().where).toContain(path.join('C:\\AppData', 'Claude'));
+  });
+});
+
+describe('defaultAdapters readEntry 接线（#1008 P3-4：tmpdir 假 home + 注入 runner 端到端，不 spawn 真实 claude/codex）', () => {
+  const SPACE_ARGS = ['/Users/John Doe/cx/dist/index.js', 'mcp'];
+  const lossyGetOut = `chexian:\n  Command: /opt/old/cx\n  Args: ${SPACE_ARGS.join(' ')}\n`;
+  // fake runner 记录全部调用（F1）：断言其必被调用——不透传 run 时 adapter 落到 defaultRunner，
+  // calls 恒空即红，红绿不依赖真实二进制行为（变异验证另在剥离 claude/codex 的 PATH 下执行）
+  const fakeRunner = (getOut: string) => {
+    const calls: string[][] = [];
+    let adds = 0;
+    const run: Runner = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[0] === '--version') return { ok: true, stdout: '' };
+      if (args[1] === 'get') return { ok: true, stdout: getOut };
+      if (args[1] === 'add') return { ok: ++adds > 1, stdout: adds > 1 ? '' : 'boom' };
+      return { ok: true, stdout: '' };
+    };
+    return { run, calls };
+  };
+
+  it('claude-code：install 回滚 re-add 用 <home>/.claude.json 读到的完整空格路径（接线实证，不再靠肉眼）', () => {
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'stdio', command: '/opt/old/cx', args: SPACE_ARGS, env: {} } },
+    }));
+    const { run, calls } = fakeRunner(lossyGetOut);
+    const a = defaultAdapters(home, 'darwin', {}, run).find((x) => x.id === 'claude-code')!;
+    expect(() => a.install(ENTRY)).toThrow(/已恢复原条目/);
+    expect(calls.length).toBeGreaterThan(0); // F1：fake runner 必被调用
+    expect(calls.at(-1)).toEqual(
+      ['claude', 'mcp', 'add', '--scope', 'user', 'chexian', '--', '/opt/old/cx', ...SPACE_ARGS],
+    );
+  });
+
+  it('codex：install 回滚 re-add 用 <home>/.codex/config.toml 读到的完整空格路径', () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `[mcp_servers.${SERVER_NAME}]\ncommand = "/opt/old/cx"\nargs = ["${SPACE_ARGS[0]}", "mcp"]\n`);
+    const { run, calls } = fakeRunner(lossyGetOut);
+    const a = defaultAdapters(home, 'darwin', {}, run).find((x) => x.id === 'codex')!;
+    expect(() => a.install(ENTRY)).toThrow(/已恢复原条目/);
+    expect(calls.length).toBeGreaterThan(0); // F1：fake runner 必被调用
+    expect(calls.at(-1)).toEqual(['codex', 'mcp', 'add', 'chexian', '--', '/opt/old/cx', ...SPACE_ARGS]);
+  });
+
+  it('P3-3 联动：defaultAdapters 的 claude-code state().entry 经无损精修携带完整空格路径', () => {
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+      mcpServers: { [SERVER_NAME]: { type: 'stdio', command: '/opt/old/cx', args: SPACE_ARGS, env: {} } },
+    }));
+    const { run } = fakeRunner(lossyGetOut);
+    const a = defaultAdapters(home, 'darwin', {}, run).find((x) => x.id === 'claude-code')!;
+    expect(a.state().entry).toEqual({ command: '/opt/old/cx', args: SPACE_ARGS });
   });
 });
 

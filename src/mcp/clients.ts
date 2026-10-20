@@ -175,7 +175,14 @@ export function cliAdapter(opts: {
     state() {
       if (!detected()) return { id: opts.id, label: opts.label, detected: false, entry: null, where: `${opts.bin} (未找到)` };
       const got = run(opts.bin, opts.getArgs);
-      const entry = got.ok ? (opts.parseEntry?.(got.stdout) ?? { command: '(已配置)', args: [] }) : null;
+      let entry: McpEntry | null = got.ok ? (opts.parseEntry?.(got.stdout) ?? { command: '(已配置)', args: [] }) : null;
+      // P3-3（#1008）：mcp get 文本把 args 按空格拼接，parseGetOutput 拆回的条目对含空格路径有损。
+      // 无损源（readEntry 直读配置文件）可用且与 get 文本交叉验证一致（sameEntry）时改用无损条目——
+      // sameEntry 等价替换对任意比较目标结果不变（渲染逐字节不变）；读不出 / 对不上 / local scope（null）保持原值。
+      if (entry && opts.readEntry) {
+        const lossless = opts.readEntry();
+        if (lossless && sameEntry(lossless, entry)) entry = lossless;
+      }
       return { id: opts.id, label: opts.label, detected: true, entry, where: `${opts.bin} mcp` };
     },
     install(entry) {
@@ -341,7 +348,10 @@ export function codexTomlEntryFromFile(file: string): McpEntry | null | undefine
   }
 }
 
-export function defaultAdapters(home = os.homedir(), platform = process.platform, env = process.env): ClientAdapter[] {
+/** run 仅测试注入用（单测跑 install/state 而不 spawn 真实 claude/codex）；缺省走 defaultRunner */
+export function defaultAdapters(
+  home = os.homedir(), platform = process.platform, env = process.env, run?: Runner,
+): ClientAdapter[] {
   const desktopDir = platform === 'darwin'
     ? path.join(home, 'Library', 'Application Support', 'Claude')
     : platform === 'win32'
@@ -355,6 +365,7 @@ export function defaultAdapters(home = os.homedir(), platform = process.platform
       getArgs: ['mcp', 'get', SERVER_NAME],
       parseEntry: parseGetOutput,
       readEntry: () => claudeJsonEntry(path.join(home, '.claude.json')),
+      run,
     }),
     cliAdapter({
       id: 'codex', label: 'Codex', bin: 'codex',
@@ -363,6 +374,7 @@ export function defaultAdapters(home = os.homedir(), platform = process.platform
       getArgs: ['mcp', 'get', SERVER_NAME],
       parseEntry: parseGetOutput,
       readEntry: () => codexTomlEntryFromFile(path.join(home, '.codex', 'config.toml')),
+      run,
     }),
     jsonAdapter({
       id: 'cursor', label: 'Cursor', file: path.join(home, '.cursor', 'mcp.json'),
