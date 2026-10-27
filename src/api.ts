@@ -127,9 +127,24 @@ async function doRequest<T>(
     }
     throw new CxApiError(429, `Rate limited (Retry-After ${retryAfter}s)`, retryAfter);
   }
-  if (res.status >= 500 && attempt < maxAttempts) {
-    await sleep(2 ** (attempt - 1) * 1000);
-    return doRequest<T>(url, token, signal, attempt + 1, analysisEvidence);
+  if (res.status >= 500) {
+    const body = await safeJson(res);
+    const errorCode = typeof body?.error?.code === 'string' ? body.error.code : undefined;
+    // CX-ADR-ee83ba 分叉二：duckdb_oom（服务端 DuckDB 内存溢出）不重试——同一查询
+    // 重放大概率再次压垮内存，重试风暴只会雪上加霜；Retry-After 透传给上层与用户。
+    if (errorCode === 'duckdb_oom') {
+      const retryAfter = parseRetryAfter(res.headers.get('Retry-After'));
+      throw new CxApiError(
+        res.status,
+        `${body?.error?.message ?? `HTTP ${res.status}`}（服务端内存溢出，建议 ${retryAfter}s 后再试）`,
+        retryAfter,
+      );
+    }
+    if (attempt < maxAttempts) {
+      await sleep(2 ** (attempt - 1) * 1000);
+      return doRequest<T>(url, token, signal, attempt + 1, analysisEvidence);
+    }
+    throw new CxApiError(res.status, body?.error?.message ?? `HTTP ${res.status}`);
   }
   if (!res.ok) {
     const body = await safeJson(res);
