@@ -46,5 +46,9 @@
   "files": [
     "dist",
     "README.md"
-  ]
+  ],
+  "overrides": {
+    "undici": ">=6.29.1 <7",
+    "zod": "4.6.6"
+  }
 }
