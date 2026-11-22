@@ -1,6 +1,6 @@
 {
   "name": "@chexian/cli",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "chexian-api 只读 CLI（PAT 鉴权，cx query/login/whoami/mcp）",
   "license": "UNLICENSED",
   "repository": {
@@ -35,7 +35,7 @@
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "kleur": "^4.1.5",
-    "undici": "^6.27.0"
+    "undici": ">=6.29.1 <7"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
