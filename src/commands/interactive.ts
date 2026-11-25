@@ -176,6 +176,7 @@ async function pickRouteInteractive(io: IO, routes: RouteMeta[]): Promise<RouteM
     process.stderr.write(kleur.red(`✘ 无匹配路由\n`));
     return null;
   }
+  if (filtered.length === 1) return filtered[0];
   const MAX = 30;
   const display = filtered.slice(0, MAX);
   process.stderr.write(kleur.gray(`\n候选 ${display.length}/${filtered.length}：\n`));

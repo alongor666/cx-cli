@@ -171,7 +171,6 @@ describe('interactiveQueryCommand 集成', () => {
   it('path :var 路由：domain 通过 wizard 收集且命中 invokeQuery', async () => {
     const io = makeFakeIO([
       'example',    // 搜索
-      '1',         // 选 EXAMPLE（搜索后唯一候选）
       'renewal',   // domain（必填 path）
       'y',         // 确认
     ]);
@@ -185,6 +184,7 @@ describe('interactiveQueryCommand 集成', () => {
     expect(invokeQuery).toHaveBeenCalledWith('EXAMPLE', expect.objectContaining({
       params: { domain: 'renewal' },
     }));
+    expect(io.state.questions.some(question => question.includes('输入序号'))).toBe(false);
   });
 
   it('用户回答 n → 不调用 invokeQuery', async () => {
@@ -235,7 +235,6 @@ describe('interactiveQueryCommand 集成', () => {
   it('path :var 必填且空回车 → retry 直到给值', async () => {
     const io = makeFakeIO([
       'example', // 搜索
-      '1',      // 选 EXAMPLE
       '',       // domain 空回车（被拒）
       'renewal', // 给值
       'y',      // 确认
